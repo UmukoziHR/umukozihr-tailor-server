@@ -1,0 +1,11 @@
+{
+  "profile": {},
+  "jobs": [{
+    "id": "OpenAI-AI_Support_Engineer",
+    "region": "GL",
+    "company": "OpenAI",
+    "title": "AI Support Engineer",
+    "jd_text": "Test job description"
+  }],
+  "prefs": {}
+}

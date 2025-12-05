@@ -1,0 +1,1538 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "UmukoziHR Resume Tailor API",
+        "version": "v1.3"
+    },
+    "paths": {
+        "/api/v1/auth/signup": {
+            "post": {
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Signup",
+                "operationId": "signup_api_v1_auth_signup_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SignupRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/login": {
+            "post": {
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Login",
+                "operationId": "login_api_v1_auth_login_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profile": {
+            "get": {
+                "summary": "Get Profile",
+                "description": "GET /api/v1/profile\nReturn saved profile for authenticated user",
+                "operationId": "get_profile_api_v1_profile_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProfileResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ]
+            },
+            "put": {
+                "summary": "Update Profile",
+                "description": "PUT /api/v1/profile\nUpdate profile with versioning and completeness calculation",
+                "operationId": "update_profile_api_v1_profile_put",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProfileUpdateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProfileUpdateResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ]
+            },
+            "post": {
+                "summary": "Save Profile",
+                "description": "Legacy endpoint for backward compatibility",
+                "operationId": "save_profile_api_v1_profile_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Profile"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/me/completeness": {
+            "get": {
+                "summary": "Get Completeness",
+                "description": "GET /api/v1/me/completeness\nCalculate and return profile completeness with breakdown",
+                "operationId": "get_completeness_api_v1_me_completeness_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompletenessResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/generate/": {
+            "post": {
+                "summary": "Generate",
+                "description": "Generate documents\n- Authenticated users: Read profile from database, persist jobs and runs\n- Unauthenticated users: Use profile from request body (legacy v1.2 behavior)",
+                "operationId": "generate_api_v1_generate__post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/GenerateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/generate/status/{run_id}": {
+            "get": {
+                "summary": "Get Generation Status",
+                "description": "Get generation status - for frontend polling compatibility\n\nSince we process synchronously, this endpoint simulates async behavior\nby checking if artifacts exist for the given run_id.",
+                "operationId": "get_generation_status_api_v1_generate_status__run_id__get",
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Run Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/jd/fetch": {
+            "post": {
+                "summary": "Fetch Jd",
+                "description": "POST /api/v1/jd/fetch\nAttempt to fetch and parse job description from URL",
+                "operationId": "fetch_jd_api_v1_jd_fetch_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/JDFetchRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JDFetchResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history": {
+            "get": {
+                "summary": "Get History",
+                "description": "GET /api/v1/history\nList past runs with pagination",
+                "operationId": "get_history_api_v1_history_get",
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1,
+                            "title": "Page"
+                        }
+                    },
+                    {
+                        "name": "page_size",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "title": "Page Size"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HistoryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history/{run_id}/regenerate": {
+            "post": {
+                "summary": "Regenerate Run",
+                "description": "POST /api/v1/history/{run_id}/regenerate\nRe-run generation for a past job using current profile",
+                "operationId": "regenerate_run_api_v1_history__run_id__regenerate_post",
+                "security": [
+                    {
+                        "HTTPBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Run Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RegenerateResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "summary": "Health Check",
+                "operationId": "health_check_health_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Award": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "by": {
+                        "type": "string",
+                        "title": "By"
+                    },
+                    "date": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Date",
+                        "default": ""
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name",
+                    "by"
+                ],
+                "title": "Award"
+            },
+            "Basics": {
+                "properties": {
+                    "full_name": {
+                        "type": "string",
+                        "title": "Full Name",
+                        "default": ""
+                    },
+                    "headline": {
+                        "type": "string",
+                        "title": "Headline",
+                        "default": ""
+                    },
+                    "summary": {
+                        "type": "string",
+                        "title": "Summary",
+                        "default": ""
+                    },
+                    "location": {
+                        "type": "string",
+                        "title": "Location",
+                        "default": ""
+                    },
+                    "email": {
+                        "type": "string",
+                        "title": "Email",
+                        "default": ""
+                    },
+                    "phone": {
+                        "type": "string",
+                        "title": "Phone",
+                        "default": ""
+                    },
+                    "website": {
+                        "type": "string",
+                        "title": "Website",
+                        "default": ""
+                    },
+                    "links": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Links",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "title": "Basics"
+            },
+            "Certification": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "issuer": {
+                        "type": "string",
+                        "title": "Issuer"
+                    },
+                    "date": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Date",
+                        "default": ""
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name",
+                    "issuer"
+                ],
+                "title": "Certification"
+            },
+            "CompletenessResponse": {
+                "properties": {
+                    "completeness": {
+                        "type": "number",
+                        "title": "Completeness"
+                    },
+                    "breakdown": {
+                        "additionalProperties": {
+                            "type": "number"
+                        },
+                        "type": "object",
+                        "title": "Breakdown"
+                    },
+                    "missing_fields": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Missing Fields"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "completeness",
+                    "breakdown",
+                    "missing_fields"
+                ],
+                "title": "CompletenessResponse",
+                "description": "Response for GET /api/v1/me/completeness"
+            },
+            "Contact": {
+                "properties": {
+                    "email": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Email",
+                        "default": ""
+                    },
+                    "phone": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Phone",
+                        "default": ""
+                    },
+                    "location": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Location",
+                        "default": ""
+                    },
+                    "links": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Links",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "title": "Contact"
+            },
+            "Education": {
+                "properties": {
+                    "school": {
+                        "type": "string",
+                        "title": "School"
+                    },
+                    "degree": {
+                        "type": "string",
+                        "title": "Degree",
+                        "default": ""
+                    },
+                    "start": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Start",
+                        "default": ""
+                    },
+                    "end": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "End",
+                        "default": ""
+                    },
+                    "gpa": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Gpa"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "school"
+                ],
+                "title": "Education"
+            },
+            "Experience": {
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "company": {
+                        "type": "string",
+                        "title": "Company"
+                    },
+                    "location": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Location",
+                        "default": ""
+                    },
+                    "start": {
+                        "type": "string",
+                        "title": "Start"
+                    },
+                    "end": {
+                        "type": "string",
+                        "title": "End",
+                        "default": "present"
+                    },
+                    "employment_type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Employment Type",
+                        "default": "full-time"
+                    },
+                    "bullets": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Bullets",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "title",
+                    "company",
+                    "start"
+                ],
+                "title": "Experience"
+            },
+            "GenerateRequest": {
+                "properties": {
+                    "profile": {
+                        "$ref": "#/components/schemas/Profile"
+                    },
+                    "jobs": {
+                        "items": {
+                            "$ref": "#/components/schemas/JobJD"
+                        },
+                        "type": "array",
+                        "title": "Jobs"
+                    },
+                    "prefs": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Prefs",
+                        "default": {}
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "profile",
+                    "jobs"
+                ],
+                "title": "GenerateRequest"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "HistoryItem": {
+                "properties": {
+                    "run_id": {
+                        "type": "string",
+                        "title": "Run Id"
+                    },
+                    "job_id": {
+                        "type": "string",
+                        "title": "Job Id"
+                    },
+                    "company": {
+                        "type": "string",
+                        "title": "Company"
+                    },
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "region": {
+                        "type": "string",
+                        "title": "Region"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "profile_version": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Profile Version"
+                    },
+                    "artifacts_urls": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Artifacts Urls"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "title": "Created At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "run_id",
+                    "job_id",
+                    "company",
+                    "title",
+                    "region",
+                    "status",
+                    "artifacts_urls",
+                    "created_at"
+                ],
+                "title": "HistoryItem",
+                "description": "Single history item"
+            },
+            "HistoryResponse": {
+                "properties": {
+                    "runs": {
+                        "items": {
+                            "$ref": "#/components/schemas/HistoryItem"
+                        },
+                        "type": "array",
+                        "title": "Runs"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "title": "Total"
+                    },
+                    "page": {
+                        "type": "integer",
+                        "title": "Page"
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "title": "Page Size"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "runs",
+                    "total",
+                    "page",
+                    "page_size"
+                ],
+                "title": "HistoryResponse",
+                "description": "Response for GET /api/v1/history"
+            },
+            "JDFetchRequest": {
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "title": "Url"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "url"
+                ],
+                "title": "JDFetchRequest",
+                "description": "Request for POST /api/v1/jd/fetch"
+            },
+            "JDFetchResponse": {
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "title": "Success"
+                    },
+                    "jd_text": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Jd Text"
+                    },
+                    "company": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Company"
+                    },
+                    "title": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Title"
+                    },
+                    "region": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Region"
+                    },
+                    "message": {
+                        "type": "string",
+                        "title": "Message"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "success",
+                    "message"
+                ],
+                "title": "JDFetchResponse",
+                "description": "Response for POST /api/v1/jd/fetch"
+            },
+            "JobJD": {
+                "properties": {
+                    "id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Id"
+                    },
+                    "region": {
+                        "type": "string",
+                        "enum": [
+                            "US",
+                            "EU",
+                            "GL"
+                        ],
+                        "title": "Region",
+                        "default": "US"
+                    },
+                    "company": {
+                        "type": "string",
+                        "title": "Company"
+                    },
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "jd_text": {
+                        "type": "string",
+                        "title": "Jd Text"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "company",
+                    "title",
+                    "jd_text"
+                ],
+                "title": "JobJD"
+            },
+            "Language": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "level": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Level",
+                        "default": ""
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "title": "Language"
+            },
+            "LoginRequest": {
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "title": "Email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "title": "Password"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "email",
+                    "password"
+                ],
+                "title": "LoginRequest"
+            },
+            "Preferences": {
+                "properties": {
+                    "regions": {
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "US",
+                                "EU",
+                                "GL"
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Regions",
+                        "default": [
+                            "US"
+                        ]
+                    },
+                    "templates": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Templates",
+                        "default": [
+                            "minimal"
+                        ]
+                    }
+                },
+                "type": "object",
+                "title": "Preferences"
+            },
+            "Profile": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "contacts": {
+                        "$ref": "#/components/schemas/Contact",
+                        "default": {
+                            "email": "",
+                            "phone": "",
+                            "location": "",
+                            "links": []
+                        }
+                    },
+                    "summary": {
+                        "type": "string",
+                        "title": "Summary",
+                        "default": ""
+                    },
+                    "skills": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Skills",
+                        "default": []
+                    },
+                    "experience": {
+                        "items": {
+                            "$ref": "#/components/schemas/Role"
+                        },
+                        "type": "array",
+                        "title": "Experience",
+                        "default": []
+                    },
+                    "education": {
+                        "items": {
+                            "$ref": "#/components/schemas/Education"
+                        },
+                        "type": "array",
+                        "title": "Education",
+                        "default": []
+                    },
+                    "projects": {
+                        "items": {
+                            "$ref": "#/components/schemas/Project"
+                        },
+                        "type": "array",
+                        "title": "Projects",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "title": "Profile",
+                "description": "Legacy v1.2 profile (kept for backward compatibility)"
+            },
+            "ProfileResponse": {
+                "properties": {
+                    "profile": {
+                        "$ref": "#/components/schemas/ProfileV3"
+                    },
+                    "version": {
+                        "type": "integer",
+                        "title": "Version"
+                    },
+                    "completeness": {
+                        "type": "number",
+                        "title": "Completeness"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "title": "Updated At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "profile",
+                    "version",
+                    "completeness",
+                    "updated_at"
+                ],
+                "title": "ProfileResponse",
+                "description": "Response for GET /api/v1/profile"
+            },
+            "ProfileUpdateRequest": {
+                "properties": {
+                    "profile": {
+                        "$ref": "#/components/schemas/ProfileV3"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "profile"
+                ],
+                "title": "ProfileUpdateRequest",
+                "description": "Request for PUT /api/v1/profile"
+            },
+            "ProfileUpdateResponse": {
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "title": "Success"
+                    },
+                    "version": {
+                        "type": "integer",
+                        "title": "Version"
+                    },
+                    "completeness": {
+                        "type": "number",
+                        "title": "Completeness"
+                    },
+                    "message": {
+                        "type": "string",
+                        "title": "Message"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "success",
+                    "version",
+                    "completeness",
+                    "message"
+                ],
+                "title": "ProfileUpdateResponse",
+                "description": "Response for PUT /api/v1/profile"
+            },
+            "ProfileV3": {
+                "properties": {
+                    "basics": {
+                        "$ref": "#/components/schemas/Basics",
+                        "default": {
+                            "full_name": "",
+                            "headline": "",
+                            "summary": "",
+                            "location": "",
+                            "email": "",
+                            "phone": "",
+                            "website": "",
+                            "links": []
+                        }
+                    },
+                    "skills": {
+                        "items": {
+                            "$ref": "#/components/schemas/Skill"
+                        },
+                        "type": "array",
+                        "title": "Skills",
+                        "default": []
+                    },
+                    "experience": {
+                        "items": {
+                            "$ref": "#/components/schemas/Experience"
+                        },
+                        "type": "array",
+                        "title": "Experience",
+                        "default": []
+                    },
+                    "education": {
+                        "items": {
+                            "$ref": "#/components/schemas/Education"
+                        },
+                        "type": "array",
+                        "title": "Education",
+                        "default": []
+                    },
+                    "projects": {
+                        "items": {
+                            "$ref": "#/components/schemas/Project"
+                        },
+                        "type": "array",
+                        "title": "Projects",
+                        "default": []
+                    },
+                    "certifications": {
+                        "items": {
+                            "$ref": "#/components/schemas/Certification"
+                        },
+                        "type": "array",
+                        "title": "Certifications",
+                        "default": []
+                    },
+                    "awards": {
+                        "items": {
+                            "$ref": "#/components/schemas/Award"
+                        },
+                        "type": "array",
+                        "title": "Awards",
+                        "default": []
+                    },
+                    "languages": {
+                        "items": {
+                            "$ref": "#/components/schemas/Language"
+                        },
+                        "type": "array",
+                        "title": "Languages",
+                        "default": []
+                    },
+                    "preferences": {
+                        "$ref": "#/components/schemas/Preferences",
+                        "default": {
+                            "regions": [
+                                "US"
+                            ],
+                            "templates": [
+                                "minimal"
+                            ]
+                        }
+                    },
+                    "version": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Version",
+                        "default": 1
+                    },
+                    "updated_at": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Updated At"
+                    }
+                },
+                "type": "object",
+                "title": "ProfileV3",
+                "description": "v1.3 comprehensive profile schema"
+            },
+            "Project": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "url": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Url",
+                        "default": ""
+                    },
+                    "stack": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Stack",
+                        "default": []
+                    },
+                    "bullets": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Bullets",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "title": "Project"
+            },
+            "RegenerateResponse": {
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "title": "Success"
+                    },
+                    "new_run_id": {
+                        "type": "string",
+                        "title": "New Run Id"
+                    },
+                    "message": {
+                        "type": "string",
+                        "title": "Message"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "success",
+                    "new_run_id",
+                    "message"
+                ],
+                "title": "RegenerateResponse",
+                "description": "Response for regenerate endpoint"
+            },
+            "Role": {
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "company": {
+                        "type": "string",
+                        "title": "Company"
+                    },
+                    "start": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Start",
+                        "default": ""
+                    },
+                    "end": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "End",
+                        "default": ""
+                    },
+                    "bullets": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Bullets",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "title",
+                    "company"
+                ],
+                "title": "Role"
+            },
+            "SignupRequest": {
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "title": "Email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "title": "Password"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "email",
+                    "password"
+                ],
+                "title": "SignupRequest"
+            },
+            "Skill": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "level": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "enum": [
+                                    "beginner",
+                                    "intermediate",
+                                    "expert"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Level",
+                        "default": "intermediate"
+                    },
+                    "keywords": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Keywords",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "title": "Skill"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        },
+        "securitySchemes": {
+            "HTTPBearer": {
+                "type": "http",
+                "scheme": "bearer"
+            }
+        }
+    }
+}
