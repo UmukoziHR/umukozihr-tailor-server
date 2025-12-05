@@ -1,0 +1,40 @@
+{
+  "profile": {
+    "name": "Jason Quist",
+    "contacts": {
+      "email": "jason@umukozihr.com",
+      "phone": "+1-555-0123",
+      "location": "San Francisco, CA",
+      "links": ["https://linkedin.com/in/jasonquist"]
+    },
+    "summary": "Experienced CTO and AI Engineer with 8+ years building scalable HR tech systems",
+    "skills": ["Python", "FastAPI", "React", "PostgreSQL", "Docker", "AWS"],
+    "experience": [{
+      "title": "CTO & VP Engineering",
+      "company": "UmukoziHR",
+      "location": "San Francisco, CA",
+      "start_date": "2024-01",
+      "end_date": "Present",
+      "bullets": [
+        "Leading technical vision for AI-powered HR solutions serving 10,000+ users",
+        "Built scalable resume tailoring system processing 1000+ documents daily",
+        "Architected microservices infrastructure with FastAPI, PostgreSQL, and Redis"
+      ]
+    }],
+    "education": [{
+      "degree": "MS Computer Science",
+      "school": "Stanford University",
+      "location": "Stanford, CA",
+      "graduation_date": "2019-06"
+    }],
+    "projects": []
+  },
+  "jobs": [{
+    "id": "curl-test",
+    "region": "US",
+    "company": "Google",
+    "title": "Senior Software Engineer - AI/ML",
+    "jd_text": "We are looking for a Senior Software Engineer to join our AI/ML team. You will work on large-scale systems using Python, develop APIs with modern frameworks like FastAPI, and lead technical initiatives. Experience with machine learning, system architecture, and team leadership is highly valued."
+  }],
+  "prefs": {}
+}

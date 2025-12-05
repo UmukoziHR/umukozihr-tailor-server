@@ -1,0 +1,53 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\setlist[itemize]{noitemsep, topsep=2pt,leftmargin=*}
+\pagenumbering{gobble}
+
+\begin{document}
+{\Large {{ profile.name }}}\\
+{{ profile.contacts.email }} • {{ profile.contacts.phone }} • {{ profile.contacts.location }}\\
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}
+{{ profile.contacts.links|join(" • ") }}
+{% endif %}
+\vspace{4pt}\hrule\vspace{6pt}
+
+\textbf{Professional Summary}\\
+{{ out.summary }}
+\vspace{6pt}\hrule\vspace{6pt}
+
+\textbf{Skills}\\
+{{ out.skills_line|join(", ") }}
+\vspace{6pt}\hrule\vspace{6pt}
+
+\textbf{Experience}\\
+{% for r in out.experience %}
+\textbf{ {{- r.title -}} } — {{ r.company }} \hfill {{ r.start or "" }}--{{ r.end or "" }}\\
+\begin{itemize}
+{% for b in r.bullets %}\item {{ b }}{% endfor %}
+\end{itemize}
+{% endfor %}
+
+\newpage
+
+{% if out.projects and out.projects|length > 0 %}
+\textbf{Projects}\\
+{% for p in out.projects %}
+\textbf{ {{- p.name -}} } — {{ p.stack|join(", ") }}\\
+\begin{itemize}
+{% for b in p.bullets %}\item {{ b }}{% endfor %}
+\end{itemize}
+{% endfor %}
+\vspace{6pt}
+{% endif %}
+
+{% if out.education and out.education|length > 0 %}
+\textbf{Education}\\
+{% for e in out.education %}
+\textbf{ {{- e.school -}} } — {{ e.degree }} \hfill {{ e.period }}\\
+{% endfor %}
+{% endif %}
+
+\end{document}

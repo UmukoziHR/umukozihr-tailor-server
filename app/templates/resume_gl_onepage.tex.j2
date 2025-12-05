@@ -1,0 +1,33 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\setlist[itemize]{noitemsep, topsep=0pt,leftmargin=*}
+\pagenumbering{gobble}
+
+\begin{document}
+{\LARGE {{ profile.name }}}\\
+{{ profile.contacts.email }} • {{ profile.contacts.phone }} • {{ profile.contacts.location }}
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\
+{{ profile.contacts.links|join(" • ") }}
+{% endif %}
+\vspace{4pt}\hrule\vspace{6pt}
+
+\textbf{Profile}\\
+{{ out.summary }}
+\vspace{6pt}\hrule\vspace{6pt}
+
+\textbf{Core Skills}\\
+{{ out.skills_line|join(", ") }}
+\vspace{6pt}\hrule\vspace{6pt}
+
+\textbf{Experience}\\
+{% for r in out.experience %}
+\textbf{ {{- r.title -}} } — {{ r.company }} \hfill {{ r.start or "" }}--{{ r.end or "" }}\\
+\begin{itemize}
+{% for b in r.bullets %}\item {{ b }}{% endfor %}
+\end{itemize}
+{% endfor %}
+
+\end{document}

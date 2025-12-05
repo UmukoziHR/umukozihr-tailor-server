@@ -1,0 +1,30 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\pagenumbering{gobble}
+
+\begin{document}
+{{ profile.contacts.location }} \hfill \today
+
+Hiring Committee\\
+{{ job.company }}
+
+\noindent \textbf{Application: {{ job.title }}}
+
+{{ out.intro }}
+
+{{ out.why_you }}
+
+\begin{itemize}
+{% for e in out.evidence %}\item {{ e }}{% endfor %}
+\end{itemize}
+
+{{ out.why_them }}
+
+{{ out.close }}
+
+Best regards,\\
+{{ profile.name }}\\
+{{ profile.contacts.email }} • {{ profile.contacts.phone }}
+\end{document}
