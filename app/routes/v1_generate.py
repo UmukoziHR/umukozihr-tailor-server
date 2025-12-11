@@ -1,17 +1,22 @@
 import uuid, os, logging
-import datetime
-from fastapi import APIRouter, HTTPException, Depends
+import time
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
+from datetime import datetime
+import uuid as python_uuid
+
 from app.models import GenerateRequest, Profile, ProfileV3
 from app.core.tailor import run_tailor
 from app.core.tex_compile import render_tex, compile_tex, bundle
 from app.db.database import get_db
 from app.db.models import User, Profile as DBProfile, Job as DBJob, Run as DBRun
 from app.auth.auth import verify_token
-from datetime import datetime
-import uuid as python_uuid
+from app.utils.analytics import (
+    track_event, track_generation_metric, EventType,
+    detect_jd_industry, detect_jd_role_type
+)
 
 logger = logging.getLogger(__name__)
 
@@ -233,29 +238,56 @@ def generate(
 
     # Process synchronously for all users
     artifacts = []
+    generation_start_time = time.time()
+    
     for idx, j in enumerate(request.jobs):
         logger.info(f"Processing job: {j.id or j.title} for company: {j.company}")
+        
+        job_start_time = time.time()
+        llm_duration = 0
+        tex_render_duration = 0
+        pdf_compile_duration = 0
+        error_type = None
+        error_message = None
 
         # Get corresponding DB job for authenticated users
         db_job = db_jobs[idx] if user_id and db_jobs else None
 
         try:
+            # Track LLM timing
+            llm_start = time.time()
             out = run_tailor(profile_to_use, j)
-            logger.info(f"LLM processing completed for job: {j.id or j.title}")
+            llm_duration = time.time() - llm_start
+            logger.info(f"LLM processing completed for job: {j.id or j.title} in {llm_duration:.2f}s")
         except Exception as e:
+            error_type = "llm_error"
+            error_message = str(e)
             logger.error(f"LLM/validation error for job {j.id or j.title}: {e}")
+            
+            # Track failed generation event
+            if user_id:
+                track_event(
+                    db=db,
+                    event_type=EventType.GENERATION_ERROR,
+                    user_id=user_id,
+                    event_data={"job_title": j.title, "company": j.company, "error": str(e)}
+                )
             raise HTTPException(400, f"LLM/validation error: {e}")
 
+        # Track TEX render timing
+        tex_start = time.time()
         base = f"{run_id}_{(j.id or j.title).replace(' ', '_')}"
         resume_ctx = {"profile": profile_to_use.model_dump(), "out": out.resume.model_dump(), "job": j.model_dump()}
         cover_letter_ctx = {"profile": profile_to_use.model_dump(), "out": out.cover_letter.model_dump(), "job": j.model_dump()}
-
         resume_tex_path, cover_letter_tex_path = render_tex(resume_ctx, cover_letter_ctx, j.region, base)
+        tex_render_duration = time.time() - tex_start
 
-        # Compile to PDFs - this is the primary goal
+        # Compile to PDFs - track timing
+        pdf_start = time.time()
         logger.info(f"Starting PDF compilation for job: {j.id or j.title}")
         resume_pdf_success = compile_tex(resume_tex_path)
         cover_letter_pdf_success = compile_tex(cover_letter_tex_path)
+        pdf_compile_duration = time.time() - pdf_start
         
         # Check PDF paths
         resume_pdf_path = resume_tex_path.replace('.tex', '.pdf')
@@ -302,6 +334,7 @@ def generate(
         artifacts.append(artifact)
 
         # Persist Run for authenticated users
+        current_run_id = None
         if user_id and db_job:
             db_run = DBRun(
                 user_id=python_uuid.UUID(user_id),
@@ -313,10 +346,45 @@ def generate(
                 created_at=datetime.utcnow()
             )
             db.add(db_run)
+            db.flush()  # Get the run ID immediately
+            current_run_id = str(db_run.id)
+            
+            # Track generation metrics
+            job_total_duration = time.time() - job_start_time
+            track_generation_metric(
+                db=db,
+                run_id=current_run_id,
+                user_id=user_id,
+                total_duration=job_total_duration,
+                llm_duration=llm_duration,
+                tex_render_duration=tex_render_duration,
+                pdf_compile_duration=pdf_compile_duration,
+                success=True,
+                region=j.region,
+                resume_pdf_success=resume_pdf_success,
+                cover_letter_pdf_success=cover_letter_pdf_success,
+                jd_text_length=len(j.jd_text),
+                keywords_matched_count=len(out.ats.jd_keywords_matched) if out.ats else 0,
+                jd_industry=detect_jd_industry(j.jd_text),
+                jd_role_type=detect_jd_role_type(j.jd_text, j.title)
+            )
 
     # Commit all runs at once for authenticated users
     if user_id:
         db.commit()
+        
+        # Track generation complete event
+        total_duration = time.time() - generation_start_time
+        track_event(
+            db=db,
+            event_type=EventType.GENERATION_COMPLETE,
+            user_id=user_id,
+            event_data={
+                "run_id": run_id,
+                "jobs_count": len(request.jobs),
+                "total_duration": round(total_duration, 2)
+            }
+        )
     
     zip_path = bundle(run_id)
     logger.info(f"Document generation completed for run_id: {run_id}")

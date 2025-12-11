@@ -12,6 +12,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.routes.v1_profile import router as profile_router
 from app.routes.v1_generate import router as generate_router
 from app.routes.v1_auth import router as auth_router
+from app.routes.v1_history import router as history_router
+from app.routes.v1_admin import router as admin_router
 import os
 
 # Configure logging
@@ -56,6 +58,14 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events"""
     # Startup
     logger.info("Starting UmukoziHR Resume Tailor API v1.3")
+
+    # Run database migrations on startup
+    try:
+        from migrate import create_tables
+        create_tables()
+        logger.info("Database migrations completed successfully")
+    except Exception as e:
+        logger.warning(f"Database migration on startup: {e}")
 
     # Start self-ping background task
     ping_task = asyncio.create_task(self_ping_task())
@@ -146,7 +156,9 @@ async def general_exception_handler(request: Request, exc: Exception):
 app.include_router(auth_router)
 app.include_router(profile_router, prefix="/api/v1/profile")
 app.include_router(generate_router, prefix="/api/v1/generate")
-logger.info("API routes registered successfully (v1.3 endpoints active)")
+app.include_router(history_router, prefix="/api/v1")
+app.include_router(admin_router)
+logger.info("API routes registered successfully (v1.3 final with admin dashboard)")
 
 @app.get("/health")
 def health_check():

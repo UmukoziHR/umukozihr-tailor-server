@@ -1,10 +1,12 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from app.db.database import get_db
 from app.db.models import User
 from app.auth.auth import hash_password, verify_password, create_access_token
+from app.utils.analytics import track_event, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class LoginRequest(BaseModel):
     password: str
 
 @router.post("/signup")
-def signup(req: SignupRequest, db: Session = Depends(get_db)):
+def signup(req: SignupRequest, request: Request, db: Session = Depends(get_db)):
     logger.info(f"=== SIGNUP START === Email: {req.email}")
 
     try:
@@ -42,7 +44,11 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         logger.info(f"Creating user object for: {req.email}")
         user = User(
             email=req.email,
-            password_hash=hashed_password
+            password_hash=hashed_password,
+            is_admin=False,
+            is_verified=False,
+            onboarding_completed=False,
+            onboarding_step=0
         )
 
         logger.info(f"Adding user to database session: {req.email}")
@@ -55,6 +61,15 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         db.refresh(user)
 
         logger.info(f"User created successfully: {req.email} with ID: {user.id}")
+
+        # Track signup event
+        track_event(
+            db=db,
+            event_type=EventType.SIGNUP,
+            user_id=str(user.id),
+            event_data={"email": req.email},
+            request=request
+        )
 
         # Generate token
         logger.info(f"Generating access token for user: {user.id}")
@@ -74,7 +89,7 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Signup failed: {str(e)}")
 
 @router.post("/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     logger.info(f"=== LOGIN START === Email: {req.email}")
 
     try:
@@ -93,6 +108,19 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         logger.info(f"Password verified successfully for user: {user.id}")
+
+        # Update last login timestamp
+        user.last_login_at = datetime.utcnow()
+        db.commit()
+
+        # Track login event
+        track_event(
+            db=db,
+            event_type=EventType.LOGIN,
+            user_id=str(user.id),
+            event_data={"email": req.email},
+            request=request
+        )
 
         logger.info(f"Generating access token for user: {user.id}")
         access_token = create_access_token({"sub": str(user.id)})

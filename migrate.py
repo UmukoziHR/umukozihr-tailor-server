@@ -12,7 +12,8 @@ server_dir = Path(__file__).parent
 sys.path.insert(0, str(server_dir))
 
 from app.db.database import engine, Base
-from app.db.models import User, Profile, Job, Run
+from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
+from app.auth.auth import hash_password
 
 def migrate_v1_2_to_v1_3(db):
     """Migrate v1.2 schema to v1.3 by adding new columns"""
@@ -24,8 +25,35 @@ def migrate_v1_2_to_v1_3(db):
 
     # Check profiles table for new columns
     profiles_columns = [col['name'] for col in inspector.get_columns('profiles')] if inspector.has_table('profiles') else []
+    users_columns = [col['name'] for col in inspector.get_columns('users')] if inspector.has_table('users') else []
 
     migrations = []
+
+    # User table enhancements for v1.3 final
+    if 'users' in inspector.get_table_names():
+        if 'is_admin' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        
+        if 'is_verified' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0")
+        
+        if 'last_login_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP")
+        
+        if 'onboarding_completed' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN onboarding_completed BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0")
+        
+        if 'onboarding_step' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column
@@ -119,19 +147,22 @@ def create_tables():
         else:
             tables = []
 
-        expected_tables = ['users', 'profiles', 'jobs', 'runs']
+        expected_tables = ['users', 'profiles', 'jobs', 'runs', 'user_events', 'generation_metrics', 'system_logs']
         created_tables = [table for table in expected_tables if table in tables]
 
         print(f"Created tables: {created_tables}")
 
         if len(created_tables) == len(expected_tables):
-            print("All required tables created successfully!")
+            print("All required tables (including analytics) created successfully!")
         else:
             missing = set(expected_tables) - set(created_tables)
             print(f"Missing tables: {missing}")
 
         # Run v1.2 → v1.3 migrations
         migrate_v1_2_to_v1_3(db)
+
+        # Setup admin user
+        setup_admin_user(db)
 
         db.close()
 
@@ -154,6 +185,65 @@ def check_connection():
         print(f"Database connection failed: {e}")
         print("Please check your DATABASE_URL and ensure PostgreSQL is running.")
         return False
+
+def setup_admin_user(db):
+    """
+    Set up the admin user account.
+    Creates the admin user if they don't exist, or updates existing user to admin.
+    """
+    from sqlalchemy import text
+    import uuid
+
+    ADMIN_EMAIL = "team@umukozihr.com"
+    # Secure password: UmukoziHR_Admin2024!
+    ADMIN_PASSWORD = "UmukoziHR_Admin2024!"
+
+    print("\n--- Setting up admin user ---")
+
+    try:
+        # Check if user exists
+        result = db.execute(
+            text("SELECT id, email, is_admin FROM users WHERE email = :email"),
+            {"email": ADMIN_EMAIL}
+        )
+        existing_user = result.fetchone()
+
+        if existing_user:
+            user_id, email, is_admin = existing_user
+            if is_admin:
+                print(f"[OK] Admin user {ADMIN_EMAIL} already exists and is admin")
+            else:
+                # Update to admin
+                db.execute(
+                    text("UPDATE users SET is_admin = TRUE WHERE email = :email"),
+                    {"email": ADMIN_EMAIL}
+                )
+                db.commit()
+                print(f"[OK] Updated {ADMIN_EMAIL} to admin")
+        else:
+            # Create new admin user
+            user_id = str(uuid.uuid4())
+            password_hash = hash_password(ADMIN_PASSWORD)
+
+            db.execute(
+                text("""
+                    INSERT INTO users (id, email, password_hash, is_admin, is_verified, onboarding_completed, onboarding_step, created_at)
+                    VALUES (:id, :email, :password_hash, TRUE, TRUE, FALSE, 0, NOW())
+                """),
+                {
+                    "id": user_id,
+                    "email": ADMIN_EMAIL,
+                    "password_hash": password_hash
+                }
+            )
+            db.commit()
+            print(f"[OK] Created admin user: {ADMIN_EMAIL}")
+            print(f"    Password: {ADMIN_PASSWORD}")
+
+    except Exception as e:
+        print(f"[WARN] Admin setup issue: {e}")
+        # Don't fail migration for admin setup issues
+
 
 if __name__ == "__main__":
     print("UmukoziHR Resume Tailor v1.3 Migration")
