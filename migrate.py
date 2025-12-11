@@ -114,6 +114,7 @@ def migrate_v1_2_to_v1_3(db):
                 db.commit()
             except Exception as e:
                 # May fail if column already exists (race condition)
+                db.rollback()  # Rollback failed transaction
                 if "already exists" in str(e) or "duplicate" in str(e).lower():
                     print(f"    (already exists, skipping)")
                 else:
