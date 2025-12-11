@@ -16,6 +16,11 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     onboarding_completed = Column(Boolean, default=False, nullable=False)
     onboarding_step = Column(Integer, default=0)
+    # Location tracking
+    country = Column(String, nullable=True)  # 2-letter ISO code (e.g., 'GH', 'US')
+    country_name = Column(String, nullable=True)  # Full country name
+    city = Column(String, nullable=True)
+    signup_ip = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Profile(Base):

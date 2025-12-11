@@ -52,8 +52,21 @@ def migrate_v1_2_to_v1_3(db):
             else:
                 migrations.append("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0")
         
-        if 'onboarding_step' not in users_columns:
-            migrations.append("ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0")
+                if 'onboarding_step' not in users_columns:
+                    migrations.append("ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0")
+        
+        # Location tracking columns (v1.3.1)
+        if 'country' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN country VARCHAR")
+        
+        if 'country_name' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN country_name VARCHAR")
+        
+        if 'city' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN city VARCHAR")
+        
+        if 'signup_ip' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN signup_ip VARCHAR")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column

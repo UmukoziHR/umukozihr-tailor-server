@@ -37,6 +37,7 @@ class UserActivityStats(BaseModel):
     onboarding_in_progress: int
     active_today: int
     active_this_week: int
+    by_country: dict  # Country breakdown with counts
 
 
 class GenerationStats(BaseModel):
@@ -101,6 +102,33 @@ def require_admin(current_user: dict = Depends(get_current_user), db: Session = 
         raise HTTPException(status_code=400, detail="Invalid user ID")
 
 
+def get_users_by_country(db: Session) -> dict:
+    """Get user count breakdown by country"""
+    country_counts = db.query(
+        User.country_name, 
+        User.country,
+        func.count(User.id)
+    ).group_by(User.country_name, User.country).all()
+    
+    result = {}
+    for country_name, country_code, count in country_counts:
+        if country_name:
+            result[country_name] = {
+                "code": country_code,
+                "count": count
+            }
+        elif country_code:
+            result[country_code] = {
+                "code": country_code,
+                "count": count
+            }
+        else:
+            result["Unknown"] = result.get("Unknown", {"code": None, "count": 0})
+            result["Unknown"]["count"] += count
+    
+    return result
+
+
 @router.get("/dashboard", response_model=AdminDashboardResponse)
 def get_admin_dashboard(
     admin: dict = Depends(require_admin),
@@ -147,7 +175,8 @@ def get_admin_dashboard(
         onboarding_completed=max(onboarding_completed, profiles_count),
         onboarding_in_progress=total_users - max(onboarding_completed, profiles_count),
         active_today=active_today,
-        active_this_week=active_this_week
+        active_this_week=active_this_week,
+        by_country=get_users_by_country(db)
     )
     
     # Generation Stats
