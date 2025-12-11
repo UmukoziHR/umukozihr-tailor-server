@@ -212,11 +212,17 @@ def setup_admin_user(db):
         if existing_user:
             user_id, email, is_admin = existing_user
             if is_admin:
+                # Ensure admin has onboarding completed
+                db.execute(
+                    text("UPDATE users SET onboarding_completed = TRUE WHERE email = :email"),
+                    {"email": ADMIN_EMAIL}
+                )
+                db.commit()
                 print(f"[OK] Admin user {ADMIN_EMAIL} already exists and is admin")
             else:
-                # Update to admin
+                # Update to admin and complete onboarding
                 db.execute(
-                    text("UPDATE users SET is_admin = TRUE WHERE email = :email"),
+                    text("UPDATE users SET is_admin = TRUE, onboarding_completed = TRUE WHERE email = :email"),
                     {"email": ADMIN_EMAIL}
                 )
                 db.commit()
@@ -229,7 +235,7 @@ def setup_admin_user(db):
             db.execute(
                 text("""
                     INSERT INTO users (id, email, password_hash, is_admin, is_verified, onboarding_completed, onboarding_step, created_at)
-                    VALUES (:id, :email, :password_hash, TRUE, TRUE, FALSE, 0, NOW())
+                    VALUES (:id, :email, :password_hash, TRUE, TRUE, TRUE, 0, NOW())
                 """),
                 {
                     "id": user_id,
