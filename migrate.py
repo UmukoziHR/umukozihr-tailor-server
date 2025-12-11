@@ -12,7 +12,7 @@ server_dir = Path(__file__).parent
 sys.path.insert(0, str(server_dir))
 
 from app.db.database import engine, Base
-from app.db.models import User, Profile, Job, Run
+from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
 
 def migrate_v1_2_to_v1_3(db):
     """Migrate v1.2 schema to v1.3 by adding new columns"""
@@ -24,8 +24,35 @@ def migrate_v1_2_to_v1_3(db):
 
     # Check profiles table for new columns
     profiles_columns = [col['name'] for col in inspector.get_columns('profiles')] if inspector.has_table('profiles') else []
+    users_columns = [col['name'] for col in inspector.get_columns('users')] if inspector.has_table('users') else []
 
     migrations = []
+
+    # User table enhancements for v1.3 final
+    if 'users' in inspector.get_table_names():
+        if 'is_admin' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        
+        if 'is_verified' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0")
+        
+        if 'last_login_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP")
+        
+        if 'onboarding_completed' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN onboarding_completed BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0")
+        
+        if 'onboarding_step' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column
@@ -119,13 +146,13 @@ def create_tables():
         else:
             tables = []
 
-        expected_tables = ['users', 'profiles', 'jobs', 'runs']
+        expected_tables = ['users', 'profiles', 'jobs', 'runs', 'user_events', 'generation_metrics', 'system_logs']
         created_tables = [table for table in expected_tables if table in tables]
 
         print(f"Created tables: {created_tables}")
 
         if len(created_tables) == len(expected_tables):
-            print("All required tables created successfully!")
+            print("All required tables (including analytics) created successfully!")
         else:
             missing = set(expected_tables) - set(created_tables)
             print(f"Missing tables: {missing}")

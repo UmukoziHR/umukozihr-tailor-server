@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -9,9 +9,10 @@ from app.models import (
     ProfileUpdateResponse, CompletenessResponse
 )
 from app.db.database import get_db
-from app.db.models import Profile as DBProfile
+from app.db.models import Profile as DBProfile, User
 from app.auth.auth import get_current_user
 from app.utils.completeness import calculate_completeness
+from app.utils.analytics import track_event, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ def get_profile(
 @router.put("/profile", response_model=ProfileUpdateResponse)
 def update_profile(
     request: ProfileUpdateRequest,
+    http_request: Request,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -116,6 +118,8 @@ def update_profile(
         logger.info(f"Checking if profile exists for user: {user_uuid}")
         db_profile = db.query(DBProfile).filter(DBProfile.user_id == user_uuid).first()
 
+        is_new_profile = db_profile is None
+
         if db_profile:
             # Update existing profile
             logger.info(f"Updating existing profile - current version: {db_profile.version}")
@@ -144,6 +148,35 @@ def update_profile(
 
         logger.info(f"Refreshing profile object for user: {user_uuid}")
         db.refresh(db_profile)
+
+        # Update user onboarding status if profile is substantial
+        if completeness >= 50:
+            user = db.query(User).filter(User.id == user_uuid).first()
+            if user and not user.onboarding_completed:
+                user.onboarding_completed = True
+                db.commit()
+                
+                # Track onboarding complete event
+                track_event(
+                    db=db,
+                    event_type=EventType.ONBOARDING_COMPLETE,
+                    user_id=user_id,
+                    event_data={"completeness": completeness},
+                    request=http_request
+                )
+
+        # Track profile update event
+        track_event(
+            db=db,
+            event_type=EventType.PROFILE_UPDATE,
+            user_id=user_id,
+            event_data={
+                "version": db_profile.version,
+                "completeness": completeness,
+                "is_new": is_new_profile
+            },
+            request=http_request
+        )
 
         logger.info(f"=== UPDATE PROFILE SUCCESS === User: {user_uuid}, Version: {db_profile.version}, Completeness: {completeness}%")
 
