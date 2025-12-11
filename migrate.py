@@ -13,6 +13,7 @@ sys.path.insert(0, str(server_dir))
 
 from app.db.database import engine, Base
 from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
+from app.auth.auth import hash_password
 
 def migrate_v1_2_to_v1_3(db):
     """Migrate v1.2 schema to v1.3 by adding new columns"""
@@ -160,6 +161,9 @@ def create_tables():
         # Run v1.2 → v1.3 migrations
         migrate_v1_2_to_v1_3(db)
 
+        # Setup admin user
+        setup_admin_user(db)
+
         db.close()
 
     except Exception as e:
@@ -181,6 +185,65 @@ def check_connection():
         print(f"Database connection failed: {e}")
         print("Please check your DATABASE_URL and ensure PostgreSQL is running.")
         return False
+
+def setup_admin_user(db):
+    """
+    Set up the admin user account.
+    Creates the admin user if they don't exist, or updates existing user to admin.
+    """
+    from sqlalchemy import text
+    import uuid
+
+    ADMIN_EMAIL = "team@umukozihr.com"
+    # Secure password: UmukoziHR_Admin2024!
+    ADMIN_PASSWORD = "UmukoziHR_Admin2024!"
+
+    print("\n--- Setting up admin user ---")
+
+    try:
+        # Check if user exists
+        result = db.execute(
+            text("SELECT id, email, is_admin FROM users WHERE email = :email"),
+            {"email": ADMIN_EMAIL}
+        )
+        existing_user = result.fetchone()
+
+        if existing_user:
+            user_id, email, is_admin = existing_user
+            if is_admin:
+                print(f"[OK] Admin user {ADMIN_EMAIL} already exists and is admin")
+            else:
+                # Update to admin
+                db.execute(
+                    text("UPDATE users SET is_admin = TRUE WHERE email = :email"),
+                    {"email": ADMIN_EMAIL}
+                )
+                db.commit()
+                print(f"[OK] Updated {ADMIN_EMAIL} to admin")
+        else:
+            # Create new admin user
+            user_id = str(uuid.uuid4())
+            password_hash = hash_password(ADMIN_PASSWORD)
+
+            db.execute(
+                text("""
+                    INSERT INTO users (id, email, password_hash, is_admin, is_verified, onboarding_completed, onboarding_step, created_at)
+                    VALUES (:id, :email, :password_hash, TRUE, TRUE, FALSE, 0, NOW())
+                """),
+                {
+                    "id": user_id,
+                    "email": ADMIN_EMAIL,
+                    "password_hash": password_hash
+                }
+            )
+            db.commit()
+            print(f"[OK] Created admin user: {ADMIN_EMAIL}")
+            print(f"    Password: {ADMIN_PASSWORD}")
+
+    except Exception as e:
+        print(f"[WARN] Admin setup issue: {e}")
+        # Don't fail migration for admin setup issues
+
 
 if __name__ == "__main__":
     print("UmukoziHR Resume Tailor v1.3 Migration")

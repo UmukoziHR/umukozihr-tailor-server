@@ -59,6 +59,14 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting UmukoziHR Resume Tailor API v1.3")
 
+    # Run database migrations on startup
+    try:
+        from migrate import create_tables
+        create_tables()
+        logger.info("Database migrations completed successfully")
+    except Exception as e:
+        logger.warning(f"Database migration on startup: {e}")
+
     # Start self-ping background task
     ping_task = asyncio.create_task(self_ping_task())
 
