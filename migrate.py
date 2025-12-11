@@ -196,8 +196,8 @@ def setup_admin_user(db):
     import uuid
 
     ADMIN_EMAIL = "team@umukozihr.com"
-    # Secure password: UmukoziHR_Admin2024!
-    ADMIN_PASSWORD = "UmukoziHR_Admin2024!"
+    # Secure password: UmukoziHR_Admin26!
+    ADMIN_PASSWORD = "UmukoziHR_Admin26!"
 
     print("\n--- Setting up admin user ---")
 
@@ -211,22 +211,14 @@ def setup_admin_user(db):
 
         if existing_user:
             user_id, email, is_admin = existing_user
-            if is_admin:
-                # Ensure admin has onboarding completed
-                db.execute(
-                    text("UPDATE users SET onboarding_completed = TRUE WHERE email = :email"),
-                    {"email": ADMIN_EMAIL}
-                )
-                db.commit()
-                print(f"[OK] Admin user {ADMIN_EMAIL} already exists and is admin")
-            else:
-                # Update to admin and complete onboarding
-                db.execute(
-                    text("UPDATE users SET is_admin = TRUE, onboarding_completed = TRUE WHERE email = :email"),
-                    {"email": ADMIN_EMAIL}
-                )
-                db.commit()
-                print(f"[OK] Updated {ADMIN_EMAIL} to admin")
+            # Always update password and ensure onboarding completed
+            new_password_hash = hash_password(ADMIN_PASSWORD)
+            db.execute(
+                text("UPDATE users SET password_hash = :password_hash, is_admin = TRUE, onboarding_completed = TRUE WHERE email = :email"),
+                {"email": ADMIN_EMAIL, "password_hash": new_password_hash}
+            )
+            db.commit()
+            print(f"[OK] Admin user {ADMIN_EMAIL} updated with new password")
         else:
             # Create new admin user
             user_id = str(uuid.uuid4())
