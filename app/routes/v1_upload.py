@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.db.database import get_db
-from app.db.models import User
+# User model not needed - get_current_user returns dict
 from app.core.resume_parser import parse_resume
 
 router = APIRouter(tags=["upload"])
@@ -39,7 +39,7 @@ class UploadResponse(BaseModel):
 @router.post("/profile/upload", response_model=UploadResponse)
 async def upload_resume(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -50,7 +50,7 @@ async def upload_resume(
     - Returns extracted ProfileV3 structure
     - User reviews and saves via PUT /api/v1/profile
     """
-    logger.info(f"Resume upload from user {current_user.id}: {file.filename} ({file.content_type})")
+    logger.info(f"Resume upload from user {current_user['id']}: {file.filename} ({file.content_type})")
     
     # Validate file extension
     filename = file.filename or "unknown"
