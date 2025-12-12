@@ -50,7 +50,7 @@ async def upload_resume(
     - Returns extracted ProfileV3 structure
     - User reviews and saves via PUT /api/v1/profile
     """
-    logger.info(f"Resume upload from user {current_user['id']}: {file.filename} ({file.content_type})")
+    logger.info(f"Resume upload from user {current_user['user_id']}: {file.filename} ({file.content_type})")
     
     # Validate file extension
     filename = file.filename or "unknown"
