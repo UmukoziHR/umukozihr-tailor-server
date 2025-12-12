@@ -74,11 +74,23 @@ class DailyMetric(BaseModel):
     count: int
 
 
+class SubscriptionStats(BaseModel):
+    free_users: int
+    basic_users: int
+    pro_users: int
+    enterprise_users: int
+    trial_users: int
+    total_paid: int
+    monthly_revenue_estimate: float  # Based on tier counts
+    conversion_rate: float  # paid / total %
+
+
 class AdminDashboardResponse(BaseModel):
     user_activity: UserActivityStats
     generation: GenerationStats
     jd_insights: JDInsights
     system_health: SystemHealthStats
+    subscription: SubscriptionStats
     signups_trend: List[DailyMetric]
     generations_trend: List[DailyMetric]
 
@@ -281,11 +293,44 @@ def get_admin_dashboard(
     signups_trend.reverse()
     generations_trend.reverse()
     
+    # Subscription Stats
+    # Count users by tier (with fallback if column doesn't exist yet)
+    try:
+        free_users = db.query(User).filter(User.subscription_tier == "free").count()
+        basic_users = db.query(User).filter(User.subscription_tier == "basic").count()
+        pro_users = db.query(User).filter(User.subscription_tier == "pro").count()
+        enterprise_users = db.query(User).filter(User.subscription_tier == "enterprise").count()
+        trial_users = db.query(User).filter(User.subscription_status == "trial").count()
+    except Exception:
+        # Fallback if subscription columns don't exist yet
+        free_users = total_users
+        basic_users = 0
+        pro_users = 0
+        enterprise_users = 0
+        trial_users = 0
+    
+    total_paid = basic_users + pro_users + enterprise_users
+    
+    # Revenue estimate (example pricing: basic=$9, pro=$29, enterprise=$99)
+    monthly_revenue = (basic_users * 9) + (pro_users * 29) + (enterprise_users * 99)
+    
+    subscription_stats = SubscriptionStats(
+        free_users=free_users or total_users,  # If no subscription data, all are free
+        basic_users=basic_users,
+        pro_users=pro_users,
+        enterprise_users=enterprise_users,
+        trial_users=trial_users,
+        total_paid=total_paid,
+        monthly_revenue_estimate=monthly_revenue,
+        conversion_rate=round((total_paid / total_users * 100) if total_users > 0 else 0, 1)
+    )
+    
     return AdminDashboardResponse(
         user_activity=user_activity,
         generation=generation_stats,
         jd_insights=jd_insights,
         system_health=system_health,
+        subscription=subscription_stats,
         signups_trend=signups_trend,
         generations_trend=generations_trend
     )

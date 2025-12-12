@@ -213,6 +213,16 @@ class RegenerateResponse(BaseModel):
 
 # v1.4 Shareable Profiles
 
+class PublicProfileResponse(BaseModel):
+    """Response for public profile viewing"""
+    username: str
+    profile: ProfileV3
+    completeness: float
+    profile_views: int
+    member_since: str
+    is_available_for_hire: bool = True
+
+
 class ShareSettingsRequest(BaseModel):
     """Request for updating share/privacy settings"""
     is_public: bool

@@ -81,6 +81,31 @@ def migrate_v1_2_to_v1_3(db):
         
         if 'profile_views' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN profile_views INTEGER DEFAULT 0")
+        
+        # Subscription & Payment columns (v1.4 prep)
+        if 'subscription_tier' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN subscription_tier VARCHAR DEFAULT 'free'")
+        
+        if 'subscription_status' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN subscription_status VARCHAR DEFAULT 'active'")
+        
+        if 'subscription_started_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN subscription_started_at TIMESTAMP")
+        
+        if 'subscription_expires_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN subscription_expires_at TIMESTAMP")
+        
+        if 'stripe_customer_id' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR")
+        
+        if 'monthly_generations_used' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN monthly_generations_used INTEGER DEFAULT 0")
+        
+        if 'monthly_generations_limit' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN monthly_generations_limit INTEGER DEFAULT 5")
+        
+        if 'usage_reset_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN usage_reset_at TIMESTAMP")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column
