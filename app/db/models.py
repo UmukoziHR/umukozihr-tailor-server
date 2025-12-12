@@ -21,6 +21,10 @@ class User(Base):
     country_name = Column(String, nullable=True)  # Full country name
     city = Column(String, nullable=True)
     signup_ip = Column(String, nullable=True)
+    # Shareable profiles (v1.4)
+    username = Column(String, unique=True, nullable=True)
+    is_public = Column(Boolean, default=True, nullable=False)
+    profile_views = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Profile(Base):

@@ -209,3 +209,31 @@ class RegenerateResponse(BaseModel):
     success: bool
     new_run_id: str
     message: str
+
+
+# v1.4 Shareable Profiles
+
+class ShareSettingsRequest(BaseModel):
+    """Request for updating share/privacy settings"""
+    is_public: bool
+
+
+class ShareSettingsResponse(BaseModel):
+    """Response with share settings and profile URL"""
+    success: bool
+    is_public: bool
+    username: str
+    profile_url: str
+    message: str
+
+
+class ShareLinksResponse(BaseModel):
+    """Response with pre-formatted share links for all platforms"""
+    profile_url: str
+    linkedin: str
+    twitter: str
+    whatsapp: str
+    telegram: str
+    email_subject: str
+    email_body: str
+    copy_text: str

@@ -52,8 +52,8 @@ def migrate_v1_2_to_v1_3(db):
             else:
                 migrations.append("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0")
         
-                if 'onboarding_step' not in users_columns:
-                    migrations.append("ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0")
+        if 'onboarding_step' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0")
         
         # Location tracking columns (v1.3.1)
         if 'country' not in users_columns:
@@ -67,6 +67,20 @@ def migrate_v1_2_to_v1_3(db):
         
         if 'signup_ip' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN signup_ip VARCHAR")
+        
+        # Shareable profiles columns (v1.4)
+        if 'username' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN username VARCHAR UNIQUE")
+            migrations.append("CREATE INDEX IF NOT EXISTS ix_users_username ON users (username)")
+        
+        if 'is_public' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN is_public BOOLEAN DEFAULT TRUE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN is_public INTEGER DEFAULT 1")
+        
+        if 'profile_views' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN profile_views INTEGER DEFAULT 0")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column
