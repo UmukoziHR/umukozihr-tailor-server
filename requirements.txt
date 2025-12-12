@@ -6,6 +6,7 @@ pydantic
 python-dotenv
 google-genai
 pypdf
+pdfplumber
 python-docx
 jsonschema
 sqlalchemy

@@ -15,6 +15,7 @@ from app.routes.v1_auth import router as auth_router
 from app.routes.v1_history import router as history_router
 from app.routes.v1_admin import router as admin_router
 from app.routes.v1_public import router as public_router
+from app.routes.v1_upload import router as upload_router
 import os
 
 # Configure logging
@@ -160,7 +161,8 @@ app.include_router(generate_router, prefix="/api/v1/generate")
 app.include_router(history_router, prefix="/api/v1")
 app.include_router(admin_router)
 app.include_router(public_router, prefix="/api/v1")
-logger.info("API routes registered successfully (v1.4 with shareable profiles)")
+app.include_router(upload_router, prefix="/api/v1")
+logger.info("API routes registered successfully (v1.4 with resume upload)")
 
 @app.get("/health")
 def health_check():
