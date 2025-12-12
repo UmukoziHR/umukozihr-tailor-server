@@ -219,6 +219,48 @@ Return ONLY valid JSON matching the schema."""
         raise
 
 
+VALID_SKILL_LEVELS = {"beginner", "intermediate", "expert"}
+
+
+def sanitize_extracted_profile(profile: dict) -> dict:
+    """
+    Sanitize extracted profile data to ensure it matches schema requirements.
+    Fixes common extraction issues like empty skill levels.
+    """
+    # Sanitize skills - ensure valid level
+    skills = profile.get("skills", [])
+    for skill in skills:
+        level = skill.get("level", "").lower().strip()
+        if level not in VALID_SKILL_LEVELS:
+            # Default to intermediate if level is missing or invalid
+            skill["level"] = "intermediate"
+            logger.debug(f"Skill '{skill.get('name', 'unknown')}' level defaulted to 'intermediate'")
+    
+    # Ensure basics has required fields with defaults
+    if "basics" not in profile:
+        profile["basics"] = {}
+    basics = profile["basics"]
+    basics.setdefault("full_name", "")
+    basics.setdefault("headline", "")
+    basics.setdefault("summary", "")
+    basics.setdefault("location", "")
+    basics.setdefault("email", "")
+    basics.setdefault("phone", "")
+    basics.setdefault("website", "")
+    basics.setdefault("links", [])
+    
+    # Ensure all arrays exist
+    profile.setdefault("skills", [])
+    profile.setdefault("experience", [])
+    profile.setdefault("education", [])
+    profile.setdefault("projects", [])
+    profile.setdefault("certifications", [])
+    profile.setdefault("awards", [])
+    profile.setdefault("languages", [])
+    
+    return profile
+
+
 def calculate_extraction_confidence(profile: dict) -> Tuple[float, list]:
     """Calculate confidence score and list warnings for extracted profile."""
     warnings = []
@@ -301,7 +343,11 @@ def parse_resume(file_bytes: bytes, content_type: str, filename: str) -> dict:
         # Step 2: Parse with LLM
         parsed_profile = parse_resume_with_llm(resume_text)
         
-        # Step 3: Calculate confidence
+        # Step 3: Sanitize extracted data to ensure schema compliance
+        parsed_profile = sanitize_extracted_profile(parsed_profile)
+        logger.info("Profile sanitized for schema compliance")
+        
+        # Step 4: Calculate confidence
         confidence, warnings = calculate_extraction_confidence(parsed_profile)
         
         return {
