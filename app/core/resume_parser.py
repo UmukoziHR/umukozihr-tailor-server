@@ -194,9 +194,9 @@ Return ONLY valid JSON matching the schema."""
             max_output_tokens=8000,
         )
         
-        logger.info("Sending resume to Gemini 2.0 Pro for parsing...")
+        logger.info("Sending resume to Gemini 2.5-pro for parsing...")
         response = client.models.generate_content(
-            model="gemini-2.0-pro-exp",
+            model="gemini-2.5-pro",
             contents=[f"{EXTRACTION_SYSTEM_PROMPT}\n\n{user_prompt}"],
             config=cfg,
         )
