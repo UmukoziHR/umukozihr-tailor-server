@@ -1,15 +1,16 @@
 """
 Job Description fetching endpoint
 Attempts to scrape JD from URL with smart handlers for popular job boards
-Supports: Ashby, Greenhouse, Lever, Workday, and generic pages via Jina Reader
+Supports: LinkedIn, Ashby, Greenhouse, Lever, and generic pages via Jina Reader
 """
 import logging
 import re
 import requests
+import time
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, HTTPException
 from app.models import JDFetchRequest, JDFetchResponse
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,228 @@ router = APIRouter()
 
 # Jina AI Reader - renders JavaScript and returns clean text
 JINA_READER_URL = "https://r.jina.ai/"
+
+# Common headers to mimic a real browser
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
+}
+
+
+def extract_linkedin_job_id(url: str) -> str:
+    """
+    Extract LinkedIn job ID from various URL formats:
+    - https://www.linkedin.com/jobs/view/{job_id}
+    - https://www.linkedin.com/jobs/collections/recommended/?currentJobId={job_id}
+    - https://www.linkedin.com/jobs/search/?currentJobId={job_id}
+    - https://linkedin.com/jobs/view/{job_id}
+    """
+    # Pattern 1: /jobs/view/{job_id}
+    match = re.search(r'/jobs/view/(\d+)', url)
+    if match:
+        return match.group(1)
+    
+    # Pattern 2: currentJobId query parameter
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    if 'currentJobId' in query_params:
+        return query_params['currentJobId'][0]
+    
+    return None
+
+
+def fetch_linkedin_job(url: str) -> dict:
+    """
+    Fetch job from LinkedIn using their hidden guest API
+    API endpoint: https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}
+    """
+    job_id = extract_linkedin_job_id(url)
+    if not job_id:
+        logger.warning(f"Could not extract LinkedIn job ID from: {url}")
+        return None
+    
+    logger.info(f"Fetching LinkedIn job: job_id={job_id}")
+    
+    # LinkedIn's hidden guest API endpoint
+    api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
+    
+    try:
+        # Use browser-like headers to avoid blocks
+        headers = BROWSER_HEADERS.copy()
+        headers["Referer"] = "https://www.linkedin.com/jobs/search/"
+        
+        response = requests.get(api_url, headers=headers, timeout=15)
+        
+        if response.status_code == 404:
+            logger.warning(f"LinkedIn job {job_id} not found (404)")
+            return None
+        
+        response.raise_for_status()
+        
+        # The API returns HTML, not JSON - parse it
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract job title
+        title = None
+        title_elem = soup.select_one('h2.top-card-layout__title, h1.topcard__title, .job-details-jobs-unified-top-card__job-title')
+        if title_elem:
+            title = title_elem.get_text(strip=True)
+        
+        # Extract company name
+        company = None
+        company_elem = soup.select_one('a.topcard__org-name-link, .topcard__flavor--black-link, .job-details-jobs-unified-top-card__company-name')
+        if company_elem:
+            company = company_elem.get_text(strip=True)
+        
+        # Extract location
+        location = None
+        location_elem = soup.select_one('.topcard__flavor--bullet, .job-details-jobs-unified-top-card__bullet')
+        if location_elem:
+            location = location_elem.get_text(strip=True)
+        
+        # Extract job description
+        jd_text = None
+        desc_elem = soup.select_one('.description__text, .show-more-less-html__markup, .job-details-jobs-unified-top-card__job-insight')
+        if desc_elem:
+            jd_text = desc_elem.get_text(separator="\n", strip=True)
+        
+        # If description not found, try to get all content from the main section
+        if not jd_text:
+            main_content = soup.select_one('.decorated-job-posting__details, .details, section.description')
+            if main_content:
+                jd_text = main_content.get_text(separator="\n", strip=True)
+        
+        # Last resort - get the entire page text
+        if not jd_text or len(jd_text) < 100:
+            # Remove script and style elements
+            for script in soup(["script", "style", "nav", "header", "footer"]):
+                script.decompose()
+            jd_text = soup.get_text(separator="\n", strip=True)
+        
+        if jd_text and len(jd_text) > 100:
+            # Build structured JD
+            jd_parts = []
+            if title:
+                jd_parts.append(f"Position: {title}")
+            if company:
+                jd_parts.append(f"Company: {company}")
+            if location:
+                jd_parts.append(f"Location: {location}")
+            jd_parts.append("\n" + jd_text)
+            
+            return {
+                'success': True,
+                'title': title,
+                'company': company,
+                'jd_text': "\n".join(jd_parts),
+                'region': detect_region(location or jd_text[:500])
+            }
+        
+        logger.warning(f"LinkedIn job {job_id}: insufficient content extracted")
+        return None
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            logger.warning(f"LinkedIn rate limited (429). Waiting and retrying...")
+            time.sleep(2)
+            # Retry once
+            try:
+                response = requests.get(api_url, headers=headers, timeout=15)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for script in soup(["script", "style", "nav", "header", "footer"]):
+                    script.decompose()
+                jd_text = soup.get_text(separator="\n", strip=True)
+                if jd_text and len(jd_text) > 100:
+                    return {
+                        'success': True,
+                        'title': None,
+                        'company': None,
+                        'jd_text': jd_text,
+                        'region': 'GL'
+                    }
+            except:
+                pass
+        logger.warning(f"LinkedIn HTTP error: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"LinkedIn API error: {e}")
+        return None
+
+
+def fetch_linkedin_via_public_view(url: str) -> dict:
+    """
+    Alternative: Try to fetch LinkedIn job via the public view page
+    Sometimes works when the API doesn't
+    """
+    job_id = extract_linkedin_job_id(url)
+    if not job_id:
+        return None
+    
+    # Construct public view URL
+    public_url = f"https://www.linkedin.com/jobs/view/{job_id}"
+    logger.info(f"Trying LinkedIn public view: {public_url}")
+    
+    try:
+        headers = BROWSER_HEADERS.copy()
+        response = requests.get(public_url, headers=headers, timeout=15, allow_redirects=True)
+        
+        # Check if we got redirected to login
+        if 'login' in response.url or 'authwall' in response.url:
+            logger.warning("LinkedIn redirected to login page")
+            return None
+        
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove unwanted elements
+        for elem in soup(["script", "style", "nav", "header", "footer", "aside"]):
+            elem.decompose()
+        
+        # Try to extract structured data from JSON-LD
+        json_ld = soup.find('script', type='application/ld+json')
+        if json_ld:
+            import json
+            try:
+                data = json.loads(json_ld.string)
+                if isinstance(data, dict) and data.get('@type') == 'JobPosting':
+                    return {
+                        'success': True,
+                        'title': data.get('title'),
+                        'company': data.get('hiringOrganization', {}).get('name'),
+                        'jd_text': data.get('description', ''),
+                        'region': detect_region(data.get('jobLocation', {}).get('address', {}).get('addressCountry', ''))
+                    }
+            except:
+                pass
+        
+        # Fallback: extract text content
+        main = soup.select_one('main, .job-view-layout, article')
+        if main:
+            text = main.get_text(separator="\n", strip=True)
+            if len(text) > 200:
+                return {
+                    'success': True,
+                    'title': None,
+                    'company': None,
+                    'jd_text': text,
+                    'region': detect_region(text[:500])
+                }
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"LinkedIn public view error: {e}")
+        return None
 
 
 def fetch_ashby_job(url: str) -> dict:
@@ -213,6 +436,8 @@ def fetch_via_jina_reader(url: str) -> dict:
         domain_parts = parsed.netloc.split('.')
         if 'jobs' in domain_parts:
             domain_parts.remove('jobs')
+        if 'www' in domain_parts:
+            domain_parts.remove('www')
         if domain_parts:
             company = domain_parts[0].replace('-', ' ').title()
         
@@ -263,6 +488,7 @@ def fetch_jd(request: JDFetchRequest):
     Attempt to fetch and parse job description from URL
     
     Supports:
+    - LinkedIn (linkedin.com/jobs) - via hidden guest API
     - Ashby (jobs.ashbyhq.com)
     - Greenhouse (boards.greenhouse.io)
     - Lever (jobs.lever.co)
@@ -281,7 +507,28 @@ def fetch_jd(request: JDFetchRequest):
     result = None
     
     # Try specific job board handlers first (faster, more reliable)
-    if 'ashbyhq.com' in url:
+    if 'linkedin.com' in url:
+        logger.info("Detected LinkedIn URL, trying guest API...")
+        result = fetch_linkedin_job(url)
+        
+        # If guest API failed, try public view
+        if not result:
+            logger.info("LinkedIn guest API failed, trying public view...")
+            result = fetch_linkedin_via_public_view(url)
+        
+        # If both failed, try Jina as last resort for LinkedIn
+        if not result:
+            logger.info("LinkedIn direct methods failed, trying Jina Reader...")
+            result = fetch_via_jina_reader(url)
+        
+        # If everything failed for LinkedIn, return helpful message
+        if not result:
+            return JDFetchResponse(
+                success=False,
+                message="LinkedIn requires login for this job. Please copy the job description from LinkedIn and paste it manually."
+            )
+    
+    elif 'ashbyhq.com' in url:
         result = fetch_ashby_job(url)
     elif 'greenhouse.io' in url:
         result = fetch_greenhouse_job(url)
@@ -299,6 +546,7 @@ def fetch_jd(request: JDFetchRequest):
         result = fetch_basic(url)
     
     if result and result.get('success'):
+        logger.info(f"Successfully extracted JD: title={result.get('title')}, company={result.get('company')}, length={len(result.get('jd_text', ''))}")
         return JDFetchResponse(
             success=True,
             jd_text=result.get('jd_text'),
