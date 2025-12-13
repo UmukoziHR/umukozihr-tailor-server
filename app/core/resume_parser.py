@@ -21,7 +21,7 @@ RULES:
 1. Extract ONLY information that is explicitly stated in the resume
 2. Do NOT invent or hallucinate any data
 3. If a field cannot be found, leave it as empty string "" or empty array []
-4. Dates should be in YYYY-MM format (e.g., "2023-01" or "present")
+4. Dates should be in YYYY-MM format (e.g., "2025-01" or "present")
 5. Parse skills with appropriate levels (beginner, intermediate, expert)
 6. Extract bullet points as they appear, preserving the original wording
 7. For LinkedIn PDF exports, adapt to their specific format
@@ -191,7 +191,7 @@ Return ONLY valid JSON matching the schema."""
             temperature=0.1,  # Low temperature for accurate extraction
             top_p=0.9,
             candidate_count=1,
-            max_output_tokens=8000,
+            max_output_tokens=10000,
         )
         
         logger.info("Sending resume to Gemini 2.5-pro for parsing...")
