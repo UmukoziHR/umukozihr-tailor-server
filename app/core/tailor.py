@@ -1,10 +1,11 @@
 # Improved Tailor pipeline: pre-filter -> LLM -> validate -> repair
+# v1.3: Now passes FULL ProfileV3 to LLM for complete context
 
 import re, json, logging
 from collections import Counter
 from .llm import build_user_prompt, call_llm, SYSTEM, OUTPUT_JSON_SCHEMA
 from .validate import validate_or_error, business_rules_check
-from app.models import Profile, JobJD, LLMOutput
+from app.models import Profile, JobJD, LLMOutput, ProfileV3
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,18 @@ def region_rules(region:str)->dict:
     if region=="GL": return {"pages":1,"style":"one-page allowed; simple","date_format":"YYYY-MM"}    
     return {"pages":2,"style":"no photo; refs on request ok","date_format":"YYYY-MM"}
 
-def run_tailor(profile: Profile, job: JobJD)->LLMOutput:
+def run_tailor(profile: Profile, job: JobJD, full_profile_v3: ProfileV3 = None) -> LLMOutput:
+    """
+    Run the tailoring pipeline.
+    
+    Args:
+        profile: Legacy Profile object (used for bullet selection and backward compatibility)
+        job: Job description object
+        full_profile_v3: Optional full ProfileV3 with certifications, awards, languages, etc.
+                        When provided, this complete data is sent to LLM for better tailoring.
+    """
     logger.info(f"=== TAILOR START === Job: {job.id or job.title}, Company: {job.company}, Region: {job.region}")
+    logger.info(f"Full ProfileV3 provided: {full_profile_v3 is not None}")
 
     try:
         logger.info(f"Selecting top bullets from profile (name: {profile.name})")
@@ -52,8 +63,18 @@ def run_tailor(profile: Profile, job: JobJD)->LLMOutput:
         logger.info(f"Region rules: {reg_rules}")
 
         logger.info(f"Building LLM prompt for job: {job.id or job.title}")
+        
+        # Use full ProfileV3 if available, otherwise fall back to legacy Profile
+        if full_profile_v3:
+            full_profile_json = full_profile_v3.model_dump_json()
+            logger.info(f"Using FULL ProfileV3 with {len(full_profile_v3.certifications)} certifications, "
+                        f"{len(full_profile_v3.awards)} awards, {len(full_profile_v3.languages)} languages")
+        else:
+            full_profile_json = profile.model_dump_json()
+            logger.info("Using legacy Profile (no ProfileV3 available)")
+        
         prompt = build_user_prompt(
-            profile_min_json=profile.model_dump_json(),
+            full_profile_json=full_profile_json,
             jd_text=job.jd_text,
             region_rules=reg_rules,
             selected_bullets_json=json.dumps(selected, ensure_ascii=False),

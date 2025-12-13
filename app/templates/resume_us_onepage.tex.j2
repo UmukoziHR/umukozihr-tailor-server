@@ -44,4 +44,26 @@
 {% endfor %}
 {% endif %}
 
+{% if out.certifications and out.certifications|length > 0 %}
+\vspace{6pt}\hrule\vspace{6pt}
+\textbf{Certifications}\\
+{% for c in out.certifications %}
+\textbf{ {{- c.name -}} } --- {{ c.issuer }}{% if c.date %} \hfill {{ c.date }}{% endif %}\\
+{% endfor %}
+{% endif %}
+
+{% if out.awards and out.awards|length > 0 %}
+\vspace{6pt}\hrule\vspace{6pt}
+\textbf{Awards}\\
+{% for a in out.awards %}
+\textbf{ {{- a.name -}} } --- {{ a.by }}{% if a.date %} \hfill {{ a.date }}{% endif %}\\
+{% endfor %}
+{% endif %}
+
+{% if out.languages and out.languages|length > 0 %}
+\vspace{6pt}\hrule\vspace{6pt}
+\textbf{Languages}\\
+{{ out.languages|map(attribute='name')|join(", ") }}
+{% endif %}
+
 \end{document}

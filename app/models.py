@@ -124,6 +124,10 @@ class OutResume(BaseModel):
     experience: List[OutRole]
     projects: List[Project] = []
     education: List[Education] = []
+    # v1.3: Full profile fields for complete context
+    certifications: List[Certification] = []
+    awards: List[Award] = []
+    languages: List[Language] = []
 
 class OutCoverLetter(BaseModel):
     address: str

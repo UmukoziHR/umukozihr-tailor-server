@@ -11,14 +11,20 @@ logger = logging.getLogger(__name__)
 
 
 SYSTEM = (
-"You are an expert ATS resume & cover-letter tailor"
-"Return ONLY valid JSON for the given schema"
-"Never invent companies, schools, or dates"
-"Use exact JD Keyowrds only when truthful"
-"Respect region style rules. Keep concise, metric-first quantitative bullets, each bullet also flowing in the oder <action -> impactful result>"
+    "You are an expert ATS resume & cover-letter tailor with 20+ years of experience. "
+    "Return ONLY valid JSON matching the provided schema. "
+    "RULES: "
+    "1) NEVER invent companies, schools, dates, or achievements - use ONLY what exists in the profile. "
+    "2) Use exact JD keywords ONLY when they truthfully match the candidate's experience. "
+    "3) Respect region style rules (US=1 page, EU=2 pages allowed, GL=1 page). "
+    "4) Write concise, metric-first quantitative bullets following <action verb → measurable result>. "
+    "5) Include relevant certifications, awards, and languages when they match the JD requirements. "
+    "6) For cover letter, reference specific company values/projects from the JD. "
+    "7) Tailor the summary to directly address the job's key requirements."
 )
 
 # Strict JSON Schema for gemini to avoid hallucinations and stick to our convention
+# Updated to include certifications, awards, and languages for full profile context
 OUTPUT_JSON_SCHEMA = Schema(
     type="OBJECT",
     required=["resume","cover_letter","ats"],
@@ -43,6 +49,21 @@ OUTPUT_JSON_SCHEMA = Schema(
                 "degree": Schema(type="STRING"),
                 "period": Schema(type="STRING"),
             })),
+            # New fields for full profile data
+            "certifications": Schema(type="ARRAY", items=Schema(type="OBJECT", properties={
+                "name": Schema(type="STRING"),
+                "issuer": Schema(type="STRING"),
+                "date": Schema(type="STRING"),
+            })),
+            "awards": Schema(type="ARRAY", items=Schema(type="OBJECT", properties={
+                "name": Schema(type="STRING"),
+                "by": Schema(type="STRING"),
+                "date": Schema(type="STRING"),
+            })),
+            "languages": Schema(type="ARRAY", items=Schema(type="OBJECT", properties={
+                "name": Schema(type="STRING"),
+                "level": Schema(type="STRING"),
+            })),
         }),
         "cover_letter": Schema(type="OBJECT", required=["address","intro","why_you","evidence","why_them","close"], properties={
             "address": Schema(type="STRING"),
@@ -60,15 +81,47 @@ OUTPUT_JSON_SCHEMA = Schema(
 )
 
 
-def build_user_prompt(profile_min_json:str, jd_text:str, region_rules:dict, selected_bullets_json:str, schema_json:str)-> str:
+def build_user_prompt(
+    full_profile_json: str,
+    jd_text: str,
+    region_rules: dict,
+    selected_bullets_json: str,
+    schema_json: str,
+    profile_min_json: str = None  # Kept for backward compatibility
+) -> str:
+    """
+    Build the LLM prompt with FULL profile context.
+    
+    Args:
+        full_profile_json: Complete ProfileV3 JSON with all fields (certifications, awards, languages, etc.)
+        jd_text: The job description text
+        region_rules: Regional formatting rules (US/EU/GL)
+        selected_bullets_json: Pre-filtered top bullets for relevance
+        schema_json: Output schema for structured response
+        profile_min_json: Legacy parameter (ignored if full_profile_json provided)
+    """
+    # Use full profile if provided, otherwise fall back to legacy
+    profile_data = full_profile_json if full_profile_json else profile_min_json
+    
     return (
-        f"REGION_RULES:\n{json.dumps(region_rules, ensure_ascii=False)}\n\n"
-        f"PROFILE_MIN:\n{profile_min_json}\n\n"
-        f"JD_TEXT:\n{jd_text}\n\n"
-        f"PRESELECTED_PROFILE_BULLETS:\n{selected_bullets_json}\n\n"
-        f"SCHEMA (immutable):\n{schema_json}\n\n"
-        "Return JSON only."
-        )
+        f"=== CANDIDATE FULL PROFILE (use ALL relevant data) ===\n"
+        f"{profile_data}\n\n"
+        f"=== JOB DESCRIPTION ===\n"
+        f"{jd_text}\n\n"
+        f"=== REGION FORMATTING RULES ===\n"
+        f"{json.dumps(region_rules, ensure_ascii=False)}\n\n"
+        f"=== PRE-SELECTED TOP BULLETS (prioritize these for experience section) ===\n"
+        f"{selected_bullets_json}\n\n"
+        f"=== OUTPUT SCHEMA (follow exactly) ===\n"
+        f"{schema_json}\n\n"
+        f"INSTRUCTIONS:\n"
+        f"1. Analyze the JD carefully for keywords, requirements, and company values.\n"
+        f"2. Use the FULL PROFILE to find matching certifications, awards, languages, and skills.\n"
+        f"3. Include certifications/awards/languages ONLY if they add value for this specific role.\n"
+        f"4. Tailor the summary to directly address the job's top 3 requirements.\n"
+        f"5. For cover letter, reference specific details from the JD (company projects, values, tech stack).\n"
+        f"6. Return ONLY valid JSON matching the schema. No markdown, no extra text."
+    )
 
 def call_llm(prompt:str)->str:
     logger.info(f"=== LLM CALL START ===")
@@ -86,14 +139,16 @@ def call_llm(prompt:str)->str:
         client = genai.Client(api_key=api_key)
         logger.info(f"Gemini client created successfully")
 
-        logger.info(f"Configuring generation settings: model=gemini-2.5-pro, temp=0.2, max_tokens=10000")
+        # Increased from 10k to 32k to prevent output truncation
+        # Gemini 2.5 Pro supports up to 65,536 output tokens
+        logger.info(f"Configuring generation settings: model=gemini-2.5-pro, temp=0.2, max_tokens=32000")
         cfg = GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=OUTPUT_JSON_SCHEMA,
             temperature=0.2,
             top_p=0.9,
             candidate_count=1,
-            max_output_tokens=10000,
+            max_output_tokens=32000,
         )
 
         logger.info(f"Sending request to Gemini API...")

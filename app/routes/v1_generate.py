@@ -124,9 +124,9 @@ def run_generation_for_job(db: Session, user_id: str, job: DBJob, profile_data: 
         jd_text=job.jd_text
     )
 
-    # Run tailor
+    # Run tailor with FULL ProfileV3 for complete context
     try:
-        out = run_tailor(legacy_profile, job_jd)
+        out = run_tailor(legacy_profile, job_jd, full_profile_v3=profile_v3)
         logger.info(f"LLM processing completed for job: {job.title}")
     except Exception as e:
         logger.error(f"LLM/validation error for job {job.title}: {e}")
@@ -199,6 +199,7 @@ def generate(
     # Determine profile source
     profile_to_use = request.profile
     profile_version = None
+    full_profile_v3 = None  # Track full ProfileV3 for LLM context
 
     if user_id:
         # v1.3: Read profile from database for authenticated users
@@ -206,10 +207,12 @@ def generate(
         db_profile = db.query(DBProfile).filter(DBProfile.user_id == python_uuid.UUID(user_id)).first()
 
         if db_profile:
-            profile_v3 = ProfileV3(**db_profile.profile_data)
-            profile_to_use = convert_v3_profile_to_legacy(profile_v3)
+            full_profile_v3 = ProfileV3(**db_profile.profile_data)
+            profile_to_use = convert_v3_profile_to_legacy(full_profile_v3)
             profile_version = db_profile.version
             logger.info(f"Loaded profile version {profile_version} from database")
+            logger.info(f"Full profile has {len(full_profile_v3.certifications)} certifications, "
+                        f"{len(full_profile_v3.awards)} awards, {len(full_profile_v3.languages)} languages")
         else:
             logger.error("No profile found in database for authenticated user")
             raise HTTPException(status_code=404, detail="Profile not found. Please complete onboarding first.")
@@ -256,7 +259,8 @@ def generate(
         try:
             # Track LLM timing
             llm_start = time.time()
-            out = run_tailor(profile_to_use, j)
+            # Pass full ProfileV3 for complete context (certifications, awards, languages, etc.)
+            out = run_tailor(profile_to_use, j, full_profile_v3=full_profile_v3)
             llm_duration = time.time() - llm_start
             logger.info(f"LLM processing completed for job: {j.id or j.title} in {llm_duration:.2f}s")
         except Exception as e:
