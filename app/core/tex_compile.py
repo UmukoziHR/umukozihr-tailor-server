@@ -104,7 +104,11 @@ def _http_api_compile(tex_path: str) -> bool:
         )
         
         # Check if compilation succeeded (API returns PDF directly on success)
-        if response.status_code == 200 and response.headers.get('content-type', '').startswith('application/pdf'):
+        # Note: API returns 201 Created on success, not 200
+        content_type = response.headers.get('content-type', '').lower()
+        is_pdf_content = 'pdf' in content_type or response.content[:5] == b'%PDF-'
+        
+        if response.status_code in (200, 201) and is_pdf_content:
             # Save the PDF
             pdf_path = tex_path.replace('.tex', '.pdf')
             with open(pdf_path, 'wb') as f:
