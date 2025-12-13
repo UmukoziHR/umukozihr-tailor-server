@@ -86,14 +86,14 @@ def call_llm(prompt:str)->str:
         client = genai.Client(api_key=api_key)
         logger.info(f"Gemini client created successfully")
 
-        logger.info(f"Configuring generation settings: model=gemini-2.5-flash, temp=0.2, max_tokens=4000")
+        logger.info(f"Configuring generation settings: model=gemini-2.5-flash, temp=0.2, max_tokens=8000")
         cfg = GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=OUTPUT_JSON_SCHEMA,
             temperature=0.2,
             top_p=0.9,
             candidate_count=1,
-            max_output_tokens=4000,
+            max_output_tokens=8000,
         )
 
         logger.info(f"Sending request to Gemini API...")
