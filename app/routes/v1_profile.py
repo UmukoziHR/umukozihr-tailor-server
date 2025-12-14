@@ -13,7 +13,7 @@ from app.models import (
     ShareSettingsRequest, ShareSettingsResponse, ShareLinksResponse
 )
 from app.db.database import get_db
-from app.db.models import Profile as DBProfile, User
+from app.db.models import Profile as DBProfile, User, Job, Run, UserEvent, GenerationMetric
 from app.auth.auth import get_current_user
 from app.utils.completeness import calculate_completeness
 from app.utils.analytics import track_event, EventType
@@ -474,17 +474,32 @@ def delete_profile(
     try:
         user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
         
-        # Find and delete profile
-        db_profile = db.query(DBProfile).filter(DBProfile.user_id == user_uuid).first()
-        if db_profile:
-            db.delete(db_profile)
-            logger.info(f"Profile deleted for user: {user_uuid}")
+        # Delete all related records first (foreign key constraints)
+        # Order matters - delete children before parents
         
-        # Find and delete user account
-        user = db.query(User).filter(User.id == user_uuid).first()
-        if user:
-            db.delete(user)
-            logger.info(f"User account deleted: {user_uuid}")
+        # Delete generation metrics (references runs and users)
+        db.query(GenerationMetric).filter(GenerationMetric.user_id == user_uuid).delete()
+        logger.info(f"Deleted generation metrics for user: {user_uuid}")
+        
+        # Delete runs (references jobs and users)
+        db.query(Run).filter(Run.user_id == user_uuid).delete()
+        logger.info(f"Deleted runs for user: {user_uuid}")
+        
+        # Delete jobs
+        db.query(Job).filter(Job.user_id == user_uuid).delete()
+        logger.info(f"Deleted jobs for user: {user_uuid}")
+        
+        # Delete user events
+        db.query(UserEvent).filter(UserEvent.user_id == user_uuid).delete()
+        logger.info(f"Deleted user events for user: {user_uuid}")
+        
+        # Delete profile
+        db.query(DBProfile).filter(DBProfile.user_id == user_uuid).delete()
+        logger.info(f"Deleted profile for user: {user_uuid}")
+        
+        # Finally delete user
+        db.query(User).filter(User.id == user_uuid).delete()
+        logger.info(f"Deleted user account: {user_uuid}")
         
         db.commit()
         
