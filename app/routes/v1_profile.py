@@ -31,7 +31,7 @@ BRAND_EMAIL = "tailor@umukozihr.com"
 def save_profile(profile: Profile):
     """Legacy endpoint for backward compatibility"""
     logger.info(f"Saving profile for: {profile.name}")
-    artifact_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "artifacts"))
+    artifact_dir = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "artifacts")))
     os.makedirs(artifact_dir, exist_ok=True)
     path = os.path.join(artifact_dir, f"profile_{profile.name.replace(' ','_')}.json")
     open(path, "w", encoding="utf-8").write(profile.model_dump_json(indent=2))
@@ -453,3 +453,50 @@ def get_share_settings(
     except Exception as e:
         logger.error(f"=== GET SHARE SETTINGS ERROR === User: {user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get share settings")
+
+
+# ============================================
+# Delete Profile (v1.5)
+# ============================================
+
+@router.delete("/")
+def delete_profile(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    DELETE /api/v1/profile
+    Permanently delete user profile and account
+    """
+    user_id = current_user["user_id"]
+    logger.info(f"=== DELETE PROFILE START === User: {user_id}")
+
+    try:
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        
+        # Find and delete profile
+        db_profile = db.query(DBProfile).filter(DBProfile.user_id == user_uuid).first()
+        if db_profile:
+            db.delete(db_profile)
+            logger.info(f"Profile deleted for user: {user_uuid}")
+        
+        # Find and delete user account
+        user = db.query(User).filter(User.id == user_uuid).first()
+        if user:
+            db.delete(user)
+            logger.info(f"User account deleted: {user_uuid}")
+        
+        db.commit()
+        
+        logger.info(f"=== DELETE PROFILE SUCCESS === User: {user_uuid}")
+        return {
+            "success": True,
+            "message": "Your profile and account have been permanently deleted."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"=== DELETE PROFILE ERROR === User: {user_id}: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete profile")

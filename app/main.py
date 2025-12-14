@@ -171,7 +171,7 @@ def health_check():
     logger.info("Health check requested")
     return {"status": "healthy", "service": "umukozihrtailor-backend"}
 
-ART = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "artifacts"))
+ART = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "artifacts")))
 os.makedirs(ART, exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=ART), name="artifacts")
 logger.info(f"Artifacts directory mounted at /artifacts: {ART}")

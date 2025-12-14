@@ -12,8 +12,8 @@ LATEX_API_TIMEOUT = 60  # seconds
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # server/app
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
-# Use the same artifacts directory as main.py
-ART_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "artifacts"))
+# Use ARTIFACTS_DIR env var if set, otherwise fallback to local path
+ART_DIR = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "artifacts")))
 os.makedirs(ART_DIR, exist_ok=True)
 
 env = Environment(
