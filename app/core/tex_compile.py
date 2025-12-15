@@ -185,21 +185,49 @@ def compile_tex(tex_path:str) -> bool:
     return False
 
 def bundle(run_id:str):
-    """Create ZIP bundle with PDFs prioritized"""
-    zip_path = os.path.join(ART_DIR, f"{run_id}_bundle.zip")
+    """Create ZIP bundle with PDFs prioritized - DEPRECATED, use bundle_pdfs_only"""
+    return bundle_pdfs_only(run_id, "Resume_User")
+
+
+def bundle_pdfs_only(run_id: str, user_name: str = "Resume_User"):
+    """
+    Create ZIP bundle with PDFs ONLY (no TEX files).
+    Uses short, user-friendly naming: Firstname_Lastname_Resumes_Year.zip
+    """
+    import re
+    
+    # Sanitize user name for filename
+    name_parts = user_name.strip().split()
+    if len(name_parts) >= 2:
+        first = re.sub(r'[^a-zA-Z0-9]', '', name_parts[0])[:15]
+        last = re.sub(r'[^a-zA-Z0-9]', '', name_parts[-1])[:15]
+    elif len(name_parts) == 1:
+        first = re.sub(r'[^a-zA-Z0-9]', '', name_parts[0])[:15]
+        last = 'User'
+    else:
+        first = 'Resume'
+        last = 'User'
+    
+    year = datetime.datetime.now().year
+    zip_filename = f"{first}_{last}_Resumes_{year}.zip"
+    zip_path = os.path.join(ART_DIR, zip_filename)
     
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # First, add PDFs (primary deliverables)
-        pdf_files = glob.glob(os.path.join(ART_DIR, f"{run_id}_*.pdf"))
-        for f in pdf_files:
+        # ONLY add PDFs - no TEX files (they cause Windows path length issues)
+        pdf_files = glob.glob(os.path.join(ART_DIR, f"*{run_id}*.pdf")) + \
+                    glob.glob(os.path.join(ART_DIR, f"{run_id}_*.pdf"))
+        # Also look for files matching the new naming pattern
+        all_pdfs = set()
+        for pattern in [f"*{run_id[:6]}*.pdf", f"{run_id}_*.pdf"]:
+            for f in glob.glob(os.path.join(ART_DIR, pattern)):
+                all_pdfs.add(f)
+        
+        for f in all_pdfs:
             zf.write(f, arcname=os.path.basename(f))
             logger.info(f"Added PDF to bundle: {os.path.basename(f)}")
         
-        # Then add TEX files (for manual compilation if needed)
-        tex_files = glob.glob(os.path.join(ART_DIR, f"{run_id}_*.tex"))
-        for f in tex_files:
-            zf.write(f, arcname=os.path.basename(f))
-            logger.info(f"Added TEX to bundle: {os.path.basename(f)}")
+        # TEX files are intentionally NOT included to avoid Windows path length issues
+        # Users can download them individually if needed
     
-    logger.info(f"Bundle created: {zip_path} ({len(pdf_files)} PDFs, {len(tex_files)} TEX files)")
+    logger.info(f"Bundle created: {zip_path} ({len(all_pdfs)} PDFs, 0 TEX files)")
     return zip_path
