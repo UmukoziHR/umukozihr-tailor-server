@@ -169,14 +169,14 @@ def get_admin_dashboard(
     # Users with profiles (alternative for onboarding completion if flag not set)
     profiles_count = db.query(Profile).count()
     
-    # Active users (had login events)
-    active_today = db.query(UserEvent).filter(
+    # Active users (had login events) - use proper distinct count for PostgreSQL
+    active_today = db.query(func.count(func.distinct(UserEvent.user_id))).filter(
         and_(UserEvent.event_type == "login", UserEvent.created_at >= today_start)
-    ).distinct(UserEvent.user_id).count()
+    ).scalar() or 0
     
-    active_this_week = db.query(UserEvent).filter(
+    active_this_week = db.query(func.count(func.distinct(UserEvent.user_id))).filter(
         and_(UserEvent.event_type == "login", UserEvent.created_at >= week_start)
-    ).distinct(UserEvent.user_id).count()
+    ).scalar() or 0
     
     user_activity = UserActivityStats(
         total_users=total_users,
@@ -217,11 +217,14 @@ def get_admin_dashboard(
     resume_success = db.query(GenerationMetric).filter(GenerationMetric.resume_pdf_success == True).count()
     cover_success = db.query(GenerationMetric).filter(GenerationMetric.cover_letter_pdf_success == True).count()
     
+    # Calculate success rate based on all attempts (successful runs + failed events)
+    total_attempts = successful_runs + failed_runs
+    
     generation_stats = GenerationStats(
         total_generations=total_runs,
         successful_generations=successful_runs,
         failed_generations=failed_runs,
-        success_rate=round((successful_runs / total_runs * 100) if total_runs > 0 else 0, 1),
+        success_rate=round((successful_runs / total_attempts * 100) if total_attempts > 0 else 100.0, 1),
         generations_today=generations_today,
         generations_this_week=generations_this_week,
         avg_total_duration=round(avg_durations[0] or 0, 2),
