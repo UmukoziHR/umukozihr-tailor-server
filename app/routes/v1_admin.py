@@ -194,7 +194,16 @@ def get_admin_dashboard(
     # Generation Stats
     total_runs = db.query(Run).count()
     successful_runs = db.query(Run).filter(Run.status == "completed").count()
-    failed_runs = db.query(Run).filter(Run.status == "failed").count()
+    
+    # Count failed generations from UserEvent table (GENERATION_ERROR events)
+    # Since failed generations don't create Run records, we count error events instead
+    failed_runs = db.query(UserEvent).filter(UserEvent.event_type == "generation_error").count()
+    failed_today = db.query(UserEvent).filter(
+        and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= today_start)
+    ).count()
+    failed_this_week = db.query(UserEvent).filter(
+        and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= week_start)
+    ).count()
     
     generations_today = db.query(Run).filter(Run.created_at >= today_start).count()
     generations_this_week = db.query(Run).filter(Run.created_at >= week_start).count()
@@ -243,33 +252,72 @@ def get_admin_dashboard(
         avg_jd_length=round(avg_jd_length_result or 0, 0)
     )
     
-    # System Health
-    errors_today = db.query(SystemLog).filter(
+    # System Health - Use UserEvent for generation errors + SystemLog for system errors
+    # Generation errors from UserEvent
+    gen_errors_today = db.query(UserEvent).filter(
+        and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= today_start)
+    ).count()
+    
+    gen_errors_this_week = db.query(UserEvent).filter(
+        and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= week_start)
+    ).count()
+    
+    # Also check SystemLog for any logged system errors
+    sys_errors_today = db.query(SystemLog).filter(
         and_(SystemLog.level == "ERROR", SystemLog.created_at >= today_start)
     ).count()
     
-    errors_this_week = db.query(SystemLog).filter(
+    sys_errors_this_week = db.query(SystemLog).filter(
         and_(SystemLog.level == "ERROR", SystemLog.created_at >= week_start)
     ).count()
     
-    error_types = db.query(SystemLog.exception_type, func.count(SystemLog.id)).filter(
+    # Combine both sources
+    errors_today = gen_errors_today + sys_errors_today
+    errors_this_week = gen_errors_this_week + sys_errors_this_week
+    
+    # Get error details from generation errors (most common source)
+    gen_error_events = db.query(UserEvent).filter(
+        and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= week_start)
+    ).all()
+    
+    errors_by_type = {}
+    for evt in gen_error_events:
+        if evt.event_data and isinstance(evt.event_data, dict):
+            error_msg = evt.event_data.get('error', 'unknown')
+            # Extract error type from message (first 50 chars)
+            error_type = error_msg[:50] if error_msg else 'unknown'
+            errors_by_type[error_type] = errors_by_type.get(error_type, 0) + 1
+    
+    # Also add system log error types if any
+    system_error_types = db.query(SystemLog.exception_type, func.count(SystemLog.id)).filter(
         and_(SystemLog.level == "ERROR", SystemLog.created_at >= week_start)
     ).group_by(SystemLog.exception_type).all()
     
-    errors_by_type = {etype or "unknown": count for etype, count in error_types}
+    for etype, count in system_error_types:
+        errors_by_type[etype or "system_error"] = errors_by_type.get(etype or "system_error", 0) + count
     
+    # Response time from SystemLog (if populated), otherwise estimate from GenerationMetric
     avg_response = db.query(func.avg(SystemLog.response_time_ms)).filter(
         SystemLog.created_at >= today_start
     ).scalar()
     
-    total_requests = db.query(SystemLog).filter(SystemLog.created_at >= today_start).count()
+    if not avg_response:
+        # Fallback: use average generation duration as a proxy
+        avg_gen_time = db.query(func.avg(GenerationMetric.total_duration)).filter(
+            GenerationMetric.created_at >= today_start
+        ).scalar()
+        avg_response = (avg_gen_time or 0) * 1000  # Convert to ms
+    
+    # Calculate error rate: errors / total generation attempts
+    total_gen_attempts = total_runs + failed_runs
+    error_rate = round((failed_runs / total_gen_attempts * 100) if total_gen_attempts > 0 else 0, 2)
     
     system_health = SystemHealthStats(
         total_errors_today=errors_today,
         total_errors_this_week=errors_this_week,
-        errors_by_type=errors_by_type,
+        errors_by_type=errors_by_type if errors_by_type else {},
         avg_response_time_ms=round(avg_response or 0, 2),
-        error_rate=round((errors_today / total_requests * 100) if total_requests > 0 else 0, 2)
+        error_rate=error_rate
     )
     
     # Trends (last 7 days)
@@ -425,38 +473,88 @@ def list_errors(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     level: str = Query("ERROR"),
+    source: str = Query("all", description="Filter by source: 'all', 'generation', 'system'"),
     admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     GET /api/v1/admin/errors
-    List system errors with pagination
+    List errors from both generation_error events and system logs
     """
     offset = (page - 1) * page_size
     
-    query = db.query(SystemLog).filter(SystemLog.level == level)
-    
-    total = query.count()
-    logs = query.order_by(desc(SystemLog.created_at)).offset(offset).limit(page_size).all()
-    
     logs_list = []
-    for log in logs:
-        logs_list.append({
-            "id": str(log.id),
-            "level": log.level,
-            "message": log.message[:200],
-            "exception_type": log.exception_type,
-            "request_path": log.request_path,
-            "request_method": log.request_method,
-            "status_code": log.status_code,
-            "created_at": log.created_at.isoformat()
-        })
+    total = 0
+    
+    # Get generation errors from UserEvent
+    if source in ["all", "generation"]:
+        gen_errors = db.query(UserEvent).filter(
+            UserEvent.event_type == "generation_error"
+        ).order_by(desc(UserEvent.created_at)).offset(offset).limit(page_size).all()
+        
+        gen_error_count = db.query(UserEvent).filter(
+            UserEvent.event_type == "generation_error"
+        ).count()
+        
+        for evt in gen_errors:
+            error_data = evt.event_data or {}
+            logs_list.append({
+                "id": str(evt.id),
+                "level": "ERROR",
+                "source": "generation",
+                "message": error_data.get('error', 'Generation failed')[:200],
+                "exception_type": "generation_error",
+                "request_path": "/api/v1/generate",
+                "request_method": "POST",
+                "status_code": 400,
+                "user_id": str(evt.user_id) if evt.user_id else None,
+                "details": {
+                    "company": error_data.get('company'),
+                    "job_title": error_data.get('job_title')
+                },
+                "created_at": evt.created_at.isoformat()
+            })
+        
+        total += gen_error_count
+    
+    # Get system errors from SystemLog
+    if source in ["all", "system"]:
+        query = db.query(SystemLog).filter(SystemLog.level == level)
+        sys_count = query.count()
+        logs = query.order_by(desc(SystemLog.created_at)).offset(offset).limit(page_size).all()
+        
+        for log in logs:
+            logs_list.append({
+                "id": str(log.id),
+                "level": log.level,
+                "source": "system",
+                "message": log.message[:200] if log.message else "System error",
+                "exception_type": log.exception_type,
+                "request_path": log.request_path,
+                "request_method": log.request_method,
+                "status_code": log.status_code,
+                "user_id": str(log.user_id) if log.user_id else None,
+                "details": None,
+                "created_at": log.created_at.isoformat()
+            })
+        
+        total += sys_count
+    
+    # Sort combined list by created_at descending
+    logs_list.sort(key=lambda x: x['created_at'], reverse=True)
+    
+    # Apply pagination to combined list
+    logs_list = logs_list[:page_size]
     
     return {
         "logs": logs_list,
         "total": total,
         "page": page,
-        "page_size": page_size
+        "page_size": page_size,
+        "sources": {
+            "generation_errors": db.query(UserEvent).filter(UserEvent.event_type == "generation_error").count(),
+            "system_errors": db.query(SystemLog).filter(SystemLog.level == "ERROR").count()
+        }
     }
 
 
