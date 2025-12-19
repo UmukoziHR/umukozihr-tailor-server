@@ -205,13 +205,12 @@ def get_plans(
 @router.post("/upgrade-intent")
 async def create_upgrade_intent(
     tier: str = Query("pro", description="Target tier"),
-    billing_cycle: str = Query("monthly", description="monthly or yearly"),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     POST /api/v1/subscription/upgrade-intent
-    Create an intent to upgrade subscription
+    Create an intent to upgrade subscription (monthly only)
     
     When payment is configured:
     - Creates Paystack checkout session
@@ -240,7 +239,7 @@ async def create_upgrade_intent(
         
         # Check if payment is configured
         if not is_payment_configured():
-            logger.info(f"Upgrade intent for user {user_id}: {tier} ({billing_cycle}) - Payment not configured")
+            logger.info(f"Upgrade intent for user {user_id}: {tier} - Payment not configured")
             return UpgradeIntentResponse(
                 success=False,
                 redirect_url=None,
@@ -250,15 +249,14 @@ async def create_upgrade_intent(
         
         # Create Paystack checkout session
         country_code = user.country
-        price = get_user_price(tier, country_code, billing_cycle)
+        price = get_user_price(tier, country_code)
         
-        logger.info(f"Creating Paystack checkout: user={user_id}, tier={tier}, cycle={billing_cycle}, price=${price}")
+        logger.info(f"Creating Paystack checkout: user={user_id}, tier={tier}, price=${price}/month")
         
         result = await paystack_create_subscription(
             email=user.email,
             user_id=user_id,
             country_code=country_code,
-            billing_cycle=billing_cycle,
             callback_url=PAYMENT_CALLBACK_URL
         )
         
@@ -268,7 +266,7 @@ async def create_upgrade_intent(
             return UpgradeIntentResponse(
                 success=True,
                 redirect_url=authorization_url,
-                message=f"Redirecting to payment for ${price}/{billing_cycle.replace('ly', '')}",
+                message=f"Redirecting to payment for ${price}/month",
                 requires_payment_setup=False
             )
         else:
@@ -460,14 +458,9 @@ async def handle_charge_success(data: dict, db: Session):
             logger.error(f"User not found for charge.success: {user_id}")
             return {"status": "error", "message": "User not found"}
         
-        # Upgrade user to Pro
+        # Upgrade user to Pro (monthly only)
         now = datetime.utcnow()
-        billing_cycle = metadata.get("billing_cycle", "monthly")
-        
-        if billing_cycle == "yearly":
-            expires_at = now + timedelta(days=365)
-        else:
-            expires_at = now + timedelta(days=30)
+        expires_at = now + timedelta(days=30)
         
         user.subscription_tier = "pro"
         user.subscription_status = "active"

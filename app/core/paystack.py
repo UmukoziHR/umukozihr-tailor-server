@@ -14,8 +14,6 @@ from app.core.subscription import (
     PAYSTACK_BASE_URL,
     PAYSTACK_PLAN_AFRICA_MONTHLY,
     PAYSTACK_PLAN_GLOBAL_MONTHLY,
-    PAYSTACK_PLAN_AFRICA_YEARLY,
-    PAYSTACK_PLAN_GLOBAL_YEARLY,
     get_paystack_plan_code,
     get_user_price,
     is_african_user
@@ -127,24 +125,22 @@ async def create_subscription(
     email: str,
     user_id: str,
     country_code: Optional[str],
-    billing_cycle: str = "monthly",
     callback_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Create a subscription checkout for a user
+    Create a subscription checkout for a user (monthly only)
     
     Args:
         email: User's email
         user_id: User's UUID
         country_code: ISO 2-letter country code for pricing
-        billing_cycle: "monthly" or "yearly"
         callback_url: URL to redirect after payment
     
     Returns:
         Dict with authorization_url to redirect user to
     """
-    plan_code = get_paystack_plan_code(country_code, billing_cycle)
-    price = get_user_price("pro", country_code, billing_cycle)
+    plan_code = get_paystack_plan_code(country_code)
+    price = get_user_price("pro", country_code)
     
     if not plan_code:
         # If no plan code configured, use one-time payment
@@ -157,7 +153,7 @@ async def create_subscription(
             metadata={
                 "type": "subscription",
                 "tier": "pro",
-                "billing_cycle": billing_cycle,
+                "billing_cycle": "monthly",
                 "is_africa": is_african_user(country_code)
             }
         )
@@ -172,7 +168,7 @@ async def create_subscription(
         metadata={
             "type": "subscription",
             "tier": "pro",
-            "billing_cycle": billing_cycle,
+            "billing_cycle": "monthly",
             "is_africa": is_african_user(country_code)
         }
     )

@@ -58,12 +58,10 @@ class TierLimits:
 
 @dataclass
 class TierPricing:
-    """Pricing for a tier in different regions"""
+    """Pricing for a tier in different regions (Monthly only)"""
     tier: SubscriptionTier
     africa_monthly_usd: float
     global_monthly_usd: float
-    africa_yearly_usd: float
-    global_yearly_usd: float
     display_name: str
     description: str
     features: List[str]
@@ -102,8 +100,6 @@ TIER_PRICING = {
         tier=SubscriptionTier.FREE,
         africa_monthly_usd=0,
         global_monthly_usd=0,
-        africa_yearly_usd=0,
-        global_yearly_usd=0,
         display_name="Free",
         description="Perfect for getting started",
         features=[
@@ -119,8 +115,6 @@ TIER_PRICING = {
         tier=SubscriptionTier.PRO,
         africa_monthly_usd=5.00,  # $5 for Africa
         global_monthly_usd=20.00,  # $20 for global
-        africa_yearly_usd=40.00,  # $40/year (33% off)
-        global_yearly_usd=160.00,  # $160/year (33% off)
         display_name="Pro",
         description="For serious job seekers",
         features=[
@@ -176,15 +170,11 @@ def get_tier_pricing(tier: str) -> TierPricing:
         return TIER_PRICING[SubscriptionTier.FREE]
 
 
-def get_user_price(tier: str, country_code: Optional[str], billing_cycle: str = "monthly") -> float:
-    """Get the appropriate price for a user based on region"""
+def get_user_price(tier: str, country_code: Optional[str]) -> float:
+    """Get the appropriate price for a user based on region (monthly only)"""
     pricing = get_tier_pricing(tier)
     is_africa = is_african_user(country_code)
-    
-    if billing_cycle == "yearly":
-        return pricing.africa_yearly_usd if is_africa else pricing.global_yearly_usd
-    else:
-        return pricing.africa_monthly_usd if is_africa else pricing.global_monthly_usd
+    return pricing.africa_monthly_usd if is_africa else pricing.global_monthly_usd
 
 
 def can_use_feature(tier: str, feature: str) -> bool:
@@ -230,7 +220,6 @@ def get_all_plans(country_code: Optional[str] = None) -> List[dict]:
             "description": pricing.description,
             "features": pricing.features,
             "monthly_price": pricing.africa_monthly_usd if is_africa else pricing.global_monthly_usd,
-            "yearly_price": pricing.africa_yearly_usd if is_africa else pricing.global_yearly_usd,
             "is_regional_pricing": is_africa,
             "currency": "USD",
             "limits": {
@@ -252,25 +241,19 @@ PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
 
 # Plan codes - will be created in Paystack dashboard
-# Format: PLN_xxxxx (monthly) - create these in Paystack
+# Format: PLN_xxxxx (monthly only - no yearly plans)
 PAYSTACK_PLAN_AFRICA_MONTHLY = os.getenv("PAYSTACK_PLAN_AFRICA_MONTHLY", "")  # $5/month
 PAYSTACK_PLAN_GLOBAL_MONTHLY = os.getenv("PAYSTACK_PLAN_GLOBAL_MONTHLY", "")  # $20/month
-PAYSTACK_PLAN_AFRICA_YEARLY = os.getenv("PAYSTACK_PLAN_AFRICA_YEARLY", "")    # $40/year
-PAYSTACK_PLAN_GLOBAL_YEARLY = os.getenv("PAYSTACK_PLAN_GLOBAL_YEARLY", "")    # $160/year
 
 def is_payment_configured() -> bool:
     """Check if Paystack is configured"""
     return bool(PAYSTACK_SECRET_KEY)
 
 
-def get_paystack_plan_code(country_code: Optional[str], billing_cycle: str = "monthly") -> Optional[str]:
-    """Get the appropriate Paystack plan code based on region"""
+def get_paystack_plan_code(country_code: Optional[str]) -> Optional[str]:
+    """Get the appropriate Paystack plan code based on region (monthly only)"""
     is_africa = is_african_user(country_code)
-    
-    if billing_cycle == "yearly":
-        return PAYSTACK_PLAN_AFRICA_YEARLY if is_africa else PAYSTACK_PLAN_GLOBAL_YEARLY
-    else:
-        return PAYSTACK_PLAN_AFRICA_MONTHLY if is_africa else PAYSTACK_PLAN_GLOBAL_MONTHLY
+    return PAYSTACK_PLAN_AFRICA_MONTHLY if is_africa else PAYSTACK_PLAN_GLOBAL_MONTHLY
 
 
 # Log status on module load
