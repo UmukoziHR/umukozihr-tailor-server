@@ -75,14 +75,34 @@ class DailyMetric(BaseModel):
 
 
 class SubscriptionStats(BaseModel):
+    """v1.4 - Updated to match actual tier structure"""
+    # User counts by tier
     free_users: int
-    basic_users: int
     pro_users: int
-    enterprise_users: int
-    trial_users: int
     total_paid: int
-    monthly_revenue_estimate: float  # Based on tier counts
+    
+    # Region breakdown
+    africa_users: int
+    global_users: int
+    
+    # Subscription status
+    active_subscriptions: int
+    cancelled_subscriptions: int
+    expired_subscriptions: int
+    
+    # Revenue (monthly pricing: Africa $5, Global $20)
+    monthly_revenue_estimate: float
+    potential_revenue: float  # If all free converted at their region's price
+    
+    # Conversion metrics
     conversion_rate: float  # paid / total %
+    africa_conversion_rate: float
+    global_conversion_rate: float
+    
+    # Usage stats
+    total_generations_used: int  # Sum of all monthly_generations_used
+    users_at_limit: int  # Free users who hit 5/5 this month
+    avg_generations_per_user: float
 
 
 class AdminDashboardResponse(BaseModel):
@@ -344,36 +364,97 @@ def get_admin_dashboard(
     signups_trend.reverse()
     generations_trend.reverse()
     
-    # Subscription Stats
-    # Count users by tier (with fallback if column doesn't exist yet)
+    # Subscription Stats - v1.4 Updated for actual tier structure
     try:
-        free_users = db.query(User).filter(User.subscription_tier == "free").count()
-        basic_users = db.query(User).filter(User.subscription_tier == "basic").count()
+        # User counts by tier (only Free and Pro now)
+        free_users = db.query(User).filter(
+            (User.subscription_tier == "free") | (User.subscription_tier == None)
+        ).count()
         pro_users = db.query(User).filter(User.subscription_tier == "pro").count()
-        enterprise_users = db.query(User).filter(User.subscription_tier == "enterprise").count()
-        trial_users = db.query(User).filter(User.subscription_status == "trial").count()
-    except Exception:
+        
+        # Region breakdown
+        africa_users = db.query(User).filter(User.region_group == "africa").count()
+        global_users = db.query(User).filter(
+            (User.region_group == "global") | (User.region_group == None)
+        ).count()
+        
+        # Subscription status counts
+        active_subs = db.query(User).filter(User.subscription_status == "active").count()
+        cancelled_subs = db.query(User).filter(User.subscription_status == "cancelled").count()
+        expired_subs = db.query(User).filter(User.subscription_status == "expired").count()
+        
+        # Pro users by region for revenue calculation
+        africa_pro = db.query(User).filter(
+            and_(User.subscription_tier == "pro", User.region_group == "africa")
+        ).count()
+        global_pro = db.query(User).filter(
+            and_(User.subscription_tier == "pro", 
+                 (User.region_group == "global") | (User.region_group == None))
+        ).count()
+        
+        # Revenue: Africa Pro = $5, Global Pro = $20
+        monthly_revenue = (africa_pro * 5) + (global_pro * 20)
+        
+        # Potential revenue if all free users converted
+        africa_free = db.query(User).filter(
+            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
+                 User.region_group == "africa")
+        ).count()
+        global_free = db.query(User).filter(
+            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
+                 (User.region_group == "global") | (User.region_group == None))
+        ).count()
+        potential_revenue = (africa_free * 5) + (global_free * 20) + monthly_revenue
+        
+        # Usage stats
+        total_gens_used = db.query(func.sum(User.monthly_generations_used)).scalar() or 0
+        users_at_limit = db.query(User).filter(
+            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
+                 User.monthly_generations_used >= 5)
+        ).count()
+        avg_gens = db.query(func.avg(User.monthly_generations_used)).scalar() or 0
+        
+        # Conversion rates by region
+        africa_conversion = round((africa_pro / africa_users * 100) if africa_users > 0 else 0, 1)
+        global_conversion = round((global_pro / global_users * 100) if global_users > 0 else 0, 1)
+        
+    except Exception as e:
+        logger.warning(f"Error fetching subscription stats: {e}")
         # Fallback if subscription columns don't exist yet
         free_users = total_users
-        basic_users = 0
         pro_users = 0
-        enterprise_users = 0
-        trial_users = 0
+        africa_users = 0
+        global_users = total_users
+        active_subs = 0
+        cancelled_subs = 0
+        expired_subs = 0
+        monthly_revenue = 0
+        potential_revenue = 0
+        total_gens_used = 0
+        users_at_limit = 0
+        avg_gens = 0
+        africa_conversion = 0
+        global_conversion = 0
     
-    total_paid = basic_users + pro_users + enterprise_users
-    
-    # Revenue estimate (example pricing: basic=$9, pro=$29, enterprise=$99)
-    monthly_revenue = (basic_users * 9) + (pro_users * 29) + (enterprise_users * 99)
+    total_paid = pro_users
     
     subscription_stats = SubscriptionStats(
-        free_users=free_users or total_users,  # If no subscription data, all are free
-        basic_users=basic_users,
+        free_users=free_users,
         pro_users=pro_users,
-        enterprise_users=enterprise_users,
-        trial_users=trial_users,
         total_paid=total_paid,
+        africa_users=africa_users,
+        global_users=global_users,
+        active_subscriptions=active_subs,
+        cancelled_subscriptions=cancelled_subs,
+        expired_subscriptions=expired_subs,
         monthly_revenue_estimate=monthly_revenue,
-        conversion_rate=round((total_paid / total_users * 100) if total_users > 0 else 0, 1)
+        potential_revenue=potential_revenue,
+        conversion_rate=round((total_paid / total_users * 100) if total_users > 0 else 0, 1),
+        africa_conversion_rate=africa_conversion,
+        global_conversion_rate=global_conversion,
+        total_generations_used=total_gens_used,
+        users_at_limit=users_at_limit,
+        avg_generations_per_user=round(avg_gens, 1)
     )
     
     return AdminDashboardResponse(
