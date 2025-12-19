@@ -117,10 +117,10 @@ TIER_PRICING = {
     ),
     SubscriptionTier.PRO: TierPricing(
         tier=SubscriptionTier.PRO,
-        africa_monthly_usd=4.99,  # ~$5 for Africa
-        global_monthly_usd=14.99,  # ~$15 for global
-        africa_yearly_usd=39.99,  # ~$40/year (33% off)
-        global_yearly_usd=119.99,  # ~$120/year (33% off)
+        africa_monthly_usd=5.00,  # $5 for Africa
+        global_monthly_usd=20.00,  # $20 for global
+        africa_yearly_usd=40.00,  # $40/year (33% off)
+        global_yearly_usd=160.00,  # $160/year (33% off)
         display_name="Pro",
         description="For serious job seekers",
         features=[
@@ -245,18 +245,32 @@ def get_all_plans(country_code: Optional[str] = None) -> List[dict]:
 
 
 # =============================================================================
-# PAYMENT PROVIDER PLACEHOLDERS
+# PAYMENT PROVIDER - PAYSTACK (Global via Ghana account)
 # =============================================================================
-# These will be implemented when Paystack/Stripe accounts are ready
-
 PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
-STRIPE_PUBLIC_KEY = os.getenv("STRIPE_PUBLIC_KEY", "")
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+PAYSTACK_BASE_URL = "https://api.paystack.co"
+
+# Plan codes - will be created in Paystack dashboard
+# Format: PLN_xxxxx (monthly) - create these in Paystack
+PAYSTACK_PLAN_AFRICA_MONTHLY = os.getenv("PAYSTACK_PLAN_AFRICA_MONTHLY", "")  # $5/month
+PAYSTACK_PLAN_GLOBAL_MONTHLY = os.getenv("PAYSTACK_PLAN_GLOBAL_MONTHLY", "")  # $20/month
+PAYSTACK_PLAN_AFRICA_YEARLY = os.getenv("PAYSTACK_PLAN_AFRICA_YEARLY", "")    # $40/year
+PAYSTACK_PLAN_GLOBAL_YEARLY = os.getenv("PAYSTACK_PLAN_GLOBAL_YEARLY", "")    # $160/year
 
 def is_payment_configured() -> bool:
-    """Check if any payment provider is configured"""
-    return bool(PAYSTACK_SECRET_KEY or STRIPE_SECRET_KEY)
+    """Check if Paystack is configured"""
+    return bool(PAYSTACK_SECRET_KEY)
+
+
+def get_paystack_plan_code(country_code: Optional[str], billing_cycle: str = "monthly") -> Optional[str]:
+    """Get the appropriate Paystack plan code based on region"""
+    is_africa = is_african_user(country_code)
+    
+    if billing_cycle == "yearly":
+        return PAYSTACK_PLAN_AFRICA_YEARLY if is_africa else PAYSTACK_PLAN_GLOBAL_YEARLY
+    else:
+        return PAYSTACK_PLAN_AFRICA_MONTHLY if is_africa else PAYSTACK_PLAN_GLOBAL_MONTHLY
 
 
 # Log status on module load

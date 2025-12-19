@@ -18,6 +18,8 @@ from app.utils.analytics import (
     track_event, track_generation_metric, EventType,
     detect_jd_industry, detect_jd_role_type
 )
+from app.core.subscription import SUBSCRIPTION_LIVE
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -461,6 +463,26 @@ def generate(
     # Commit all runs at once for authenticated users
     if user_id:
         db.commit()
+        
+        # Increment usage counter (only for successful generations, only if subscription is live)
+        if SUBSCRIPTION_LIVE:
+            user_uuid = python_uuid.UUID(user_id)
+            user = db.query(User).filter(User.id == user_uuid).first()
+            if user:
+                # Initialize usage reset date if not set
+                now = datetime.utcnow()
+                if not user.usage_reset_at:
+                    user.usage_reset_at = now + timedelta(days=30)
+                elif user.usage_reset_at <= now:
+                    # Reset if past reset date
+                    user.monthly_generations_used = 0
+                    user.usage_reset_at = now + timedelta(days=30)
+                
+                # Increment usage by number of successful jobs
+                successful_count = len([r for r in results if r.get('resume_success') or r.get('cover_success')])
+                user.monthly_generations_used = (user.monthly_generations_used or 0) + successful_count
+                db.commit()
+                logger.info(f"Usage updated: user={user_id}, added={successful_count}, total={user.monthly_generations_used}")
         
         # Track generation complete event
         total_duration = time.time() - generation_start_time

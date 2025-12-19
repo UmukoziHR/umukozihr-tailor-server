@@ -21,16 +21,18 @@ class User(Base):
     country_name = Column(String, nullable=True)  # Full country name
     city = Column(String, nullable=True)
     signup_ip = Column(String, nullable=True)
+    region_group = Column(String, default="global")  # 'africa' or 'global' - for pricing
     # Shareable profiles (v1.4)
     username = Column(String, unique=True, nullable=True)
     is_public = Column(Boolean, default=True, nullable=False)
     profile_views = Column(Integer, default=0)
-    # Subscription & Payment (v1.4 prep)
-    subscription_tier = Column(String, default="free")  # free, basic, pro, enterprise
+    # Subscription & Payment (v1.4)
+    subscription_tier = Column(String, default="free")  # free, pro
     subscription_status = Column(String, default="active")  # active, cancelled, expired, trial
     subscription_started_at = Column(DateTime, nullable=True)
     subscription_expires_at = Column(DateTime, nullable=True)
-    stripe_customer_id = Column(String, nullable=True)  # For Stripe integration
+    paystack_customer_code = Column(String, nullable=True)  # Paystack customer code (CUS_xxx)
+    paystack_subscription_code = Column(String, nullable=True)  # Paystack subscription code (SUB_xxx)
     # Usage tracking
     monthly_generations_used = Column(Integer, default=0)
     monthly_generations_limit = Column(Integer, default=5)  # Free tier: 5/month

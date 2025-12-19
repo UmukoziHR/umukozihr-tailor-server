@@ -98,6 +98,16 @@ def migrate_v1_2_to_v1_3(db):
         if 'stripe_customer_id' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR")
         
+        # v1.4 Paystack/Subscription columns
+        if 'region_group' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN region_group VARCHAR DEFAULT 'global'")
+        
+        if 'paystack_customer_code' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN paystack_customer_code VARCHAR")
+        
+        if 'paystack_subscription_code' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN paystack_subscription_code VARCHAR")
+        
         if 'monthly_generations_used' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN monthly_generations_used INTEGER DEFAULT 0")
         

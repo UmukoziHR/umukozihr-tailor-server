@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.db.models import User
 from app.auth.auth import hash_password, verify_password, create_access_token
 from app.utils.analytics import track_event, EventType
+from app.core.subscription import is_african_user
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +84,15 @@ def signup(req: SignupRequest, request: Request, db: Session = Depends(get_db)):
         hashed_password = hash_password(req.password)
         logger.info(f"Password hashed successfully, length: {len(hashed_password)}")
 
-                # Get client IP and location
+        # Get client IP and location
         client_ip = get_client_ip(request)
         location = get_location_from_ip(client_ip)
         logger.info(f"Client IP: {client_ip}, Location: {location}")
+        
+        # Determine region group for pricing
+        country_code = location.get('country')
+        region_group = 'africa' if is_african_user(country_code) else 'global'
+        logger.info(f"Region group: {region_group}")
 
         # Create user
         logger.info(f"Creating user object for: {req.email}")
@@ -97,10 +103,11 @@ def signup(req: SignupRequest, request: Request, db: Session = Depends(get_db)):
             is_verified=False,
             onboarding_completed=False,
             onboarding_step=0,
-            country=location.get('country'),
+            country=country_code,
             country_name=location.get('country_name'),
             city=location.get('city'),
-            signup_ip=client_ip
+            signup_ip=client_ip,
+            region_group=region_group
         )
 
         logger.info(f"Adding user to database session: {req.email}")

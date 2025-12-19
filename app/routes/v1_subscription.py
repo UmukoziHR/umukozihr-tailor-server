@@ -1,17 +1,18 @@
 """
 Subscription API Routes
-v1.4 - Payment Infrastructure
+v1.4 - Payment Infrastructure with Paystack Integration
 
 Endpoints for:
 - Getting available plans
 - User subscription status
 - Usage tracking
-- Upgrade/downgrade intents (Paystack/Stripe integration placeholder)
+- Upgrade/downgrade intents (Paystack integration)
 """
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from uuid import UUID
@@ -30,8 +31,16 @@ from app.core.subscription import (
     is_african_user,
     is_payment_configured
 )
+from app.core.paystack import (
+    create_subscription as paystack_create_subscription,
+    verify_transaction,
+    verify_webhook_signature
+)
 
 logger = logging.getLogger(__name__)
+
+# Get callback URL from environment
+PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", "https://tailor.umukozihr.com/settings")
 
 router = APIRouter(prefix="/api/v1/subscription", tags=["subscription"])
 
@@ -194,7 +203,7 @@ def get_plans(
 
 
 @router.post("/upgrade-intent")
-def create_upgrade_intent(
+async def create_upgrade_intent(
     tier: str = Query("pro", description="Target tier"),
     billing_cycle: str = Query("monthly", description="monthly or yearly"),
     current_user: dict = Depends(get_current_user),
@@ -205,7 +214,7 @@ def create_upgrade_intent(
     Create an intent to upgrade subscription
     
     When payment is configured:
-    - Creates Paystack/Stripe checkout session
+    - Creates Paystack checkout session
     - Returns redirect URL
     
     When payment is NOT configured:
@@ -239,20 +248,37 @@ def create_upgrade_intent(
                 requires_payment_setup=True
             )
         
-        # TODO: Implement Paystack/Stripe checkout session creation
-        # For now, return placeholder
+        # Create Paystack checkout session
         country_code = user.country
         price = get_user_price(tier, country_code, billing_cycle)
         
-        logger.info(f"Upgrade intent: user={user_id}, tier={tier}, cycle={billing_cycle}, price=${price}")
+        logger.info(f"Creating Paystack checkout: user={user_id}, tier={tier}, cycle={billing_cycle}, price=${price}")
         
-        # Placeholder - will be replaced with actual payment URL
-        return UpgradeIntentResponse(
-            success=True,
-            redirect_url=None,  # Will be Paystack/Stripe URL
-            message=f"Upgrade to {tier.title()} for ${price}/{billing_cycle.replace('ly', '')}",
-            requires_payment_setup=False
+        result = await paystack_create_subscription(
+            email=user.email,
+            user_id=user_id,
+            country_code=country_code,
+            billing_cycle=billing_cycle,
+            callback_url=PAYMENT_CALLBACK_URL
         )
+        
+        if result.get("status") and result.get("data"):
+            authorization_url = result["data"].get("authorization_url")
+            logger.info(f"Paystack checkout created: {result['data'].get('reference')}")
+            return UpgradeIntentResponse(
+                success=True,
+                redirect_url=authorization_url,
+                message=f"Redirecting to payment for ${price}/{billing_cycle.replace('ly', '')}",
+                requires_payment_setup=False
+            )
+        else:
+            logger.error(f"Paystack checkout failed: {result.get('message')}")
+            return UpgradeIntentResponse(
+                success=False,
+                redirect_url=None,
+                message=result.get("message", "Payment initialization failed"),
+                requires_payment_setup=False
+            )
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user ID")
@@ -360,18 +386,153 @@ def check_can_generate(
 
 
 # =============================================================================
-# WEBHOOK PLACEHOLDERS
+# WEBHOOKS
 # =============================================================================
 @router.post("/webhooks/paystack")
-async def paystack_webhook():
+async def paystack_webhook(request: Request, db: Session = Depends(get_db)):
     """
     POST /api/v1/subscription/webhooks/paystack
     Handle Paystack payment webhooks
     
-    TODO: Implement when Paystack is configured
+    Events handled:
+    - charge.success: Payment completed
+    - subscription.create: New subscription created
+    - subscription.disable: Subscription cancelled
+    - invoice.payment_failed: Payment failed
     """
-    logger.info("Paystack webhook received (not implemented)")
-    return {"status": "ok", "message": "Webhook endpoint ready, implementation pending"}
+    # Get raw body for signature verification
+    body = await request.body()
+    signature = request.headers.get("x-paystack-signature", "")
+    
+    # Verify webhook signature
+    if not verify_webhook_signature(body, signature):
+        logger.warning("Invalid Paystack webhook signature")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    
+    try:
+        import json
+        payload = json.loads(body)
+        event = payload.get("event")
+        data = payload.get("data", {})
+        
+        logger.info(f"Paystack webhook received: {event}")
+        
+        if event == "charge.success":
+            # Payment completed - upgrade user
+            return await handle_charge_success(data, db)
+        
+        elif event == "subscription.create":
+            # Subscription created
+            return await handle_subscription_created(data, db)
+        
+        elif event == "subscription.disable":
+            # Subscription cancelled
+            return await handle_subscription_cancelled(data, db)
+        
+        elif event == "invoice.payment_failed":
+            # Payment failed
+            return await handle_payment_failed(data, db)
+        
+        else:
+            logger.info(f"Unhandled Paystack event: {event}")
+            return {"status": "ok", "message": f"Event {event} acknowledged"}
+            
+    except Exception as e:
+        logger.error(f"Paystack webhook error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+
+async def handle_charge_success(data: dict, db: Session):
+    """Handle successful payment - upgrade user to Pro"""
+    metadata = data.get("metadata", {})
+    user_id = metadata.get("user_id")
+    customer_code = data.get("customer", {}).get("customer_code")
+    
+    if not user_id:
+        logger.warning("charge.success without user_id in metadata")
+        return {"status": "ok", "message": "No user_id in metadata"}
+    
+    try:
+        user_uuid = UUID(user_id)
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            logger.error(f"User not found for charge.success: {user_id}")
+            return {"status": "error", "message": "User not found"}
+        
+        # Upgrade user to Pro
+        now = datetime.utcnow()
+        billing_cycle = metadata.get("billing_cycle", "monthly")
+        
+        if billing_cycle == "yearly":
+            expires_at = now + timedelta(days=365)
+        else:
+            expires_at = now + timedelta(days=30)
+        
+        user.subscription_tier = "pro"
+        user.subscription_status = "active"
+        user.subscription_started_at = now
+        user.subscription_expires_at = expires_at
+        user.paystack_customer_code = customer_code
+        user.monthly_generations_limit = -1  # Unlimited
+        
+        db.commit()
+        
+        logger.info(f"User upgraded to Pro: {user_id}, expires: {expires_at}")
+        return {"status": "ok", "message": "User upgraded to Pro"}
+        
+    except Exception as e:
+        logger.error(f"Error upgrading user: {e}")
+        db.rollback()
+        return {"status": "error", "message": str(e)}
+
+
+async def handle_subscription_created(data: dict, db: Session):
+    """Handle new subscription creation"""
+    subscription_code = data.get("subscription_code")
+    customer = data.get("customer", {})
+    customer_code = customer.get("customer_code")
+    email = customer.get("email")
+    
+    if email:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.paystack_subscription_code = subscription_code
+            user.paystack_customer_code = customer_code
+            db.commit()
+            logger.info(f"Subscription code saved for user: {email}")
+    
+    return {"status": "ok", "message": "Subscription created"}
+
+
+async def handle_subscription_cancelled(data: dict, db: Session):
+    """Handle subscription cancellation"""
+    subscription_code = data.get("subscription_code")
+    
+    user = db.query(User).filter(User.paystack_subscription_code == subscription_code).first()
+    
+    if user:
+        user.subscription_status = "cancelled"
+        # Keep Pro until expiry date
+        db.commit()
+        logger.info(f"Subscription cancelled for user: {user.email}")
+    
+    return {"status": "ok", "message": "Subscription cancelled"}
+
+
+async def handle_payment_failed(data: dict, db: Session):
+    """Handle failed payment"""
+    customer = data.get("customer", {})
+    email = customer.get("email")
+    
+    if email:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.subscription_status = "past_due"
+            db.commit()
+            logger.warning(f"Payment failed for user: {email}")
+    
+    return {"status": "ok", "message": "Payment failure recorded"}
 
 
 @router.post("/webhooks/stripe")
@@ -380,7 +541,7 @@ async def stripe_webhook():
     POST /api/v1/subscription/webhooks/stripe
     Handle Stripe payment webhooks
     
-    TODO: Implement when Stripe is configured
+    Not implemented - using Paystack for all payments
     """
-    logger.info("Stripe webhook received (not implemented)")
-    return {"status": "ok", "message": "Webhook endpoint ready, implementation pending"}
+    logger.info("Stripe webhook received (not used - using Paystack)")
+    return {"status": "ok", "message": "Using Paystack for all payments"}
