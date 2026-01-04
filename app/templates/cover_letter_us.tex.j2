@@ -1,0 +1,56 @@
+% US Cover Letter - Concise & Direct
+% American format: 3-4 paragraphs, achievement-focused, one page
+\documentclass[11pt]{article}
+\usepackage[letterpaper, margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{parskip}
+\usepackage{enumitem}
+\setlength{\parskip}{11pt}
+\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=18pt, parsep=2pt}
+\pagenumbering{gobble}
+
+\begin{document}
+
+% === DATE & ADDRESS ===
+\today
+
+\vspace{8pt}
+
+{{ out.address }}
+
+\vspace{8pt}
+
+% === SALUTATION ===
+Dear Hiring Manager,
+
+% === OPENING - Hook with enthusiasm ===
+{{ out.intro }}
+
+% === WHY YOU - Your qualifications ===
+{{ out.why_you }}
+
+% === EVIDENCE - Key achievements (bullets for US style) ===
+{% if out.evidence and out.evidence|length > 0 %}
+Key achievements that align with this role:
+\begin{itemize}
+{% for e in out.evidence %}\item {{ e }}
+{% endfor %}\end{itemize}
+{% endif %}
+
+% === WHY THEM - Company-specific interest ===
+{{ out.why_them }}
+
+% === CLOSING - Call to action ===
+{{ out.close }}
+
+\vspace{8pt}
+
+Sincerely,
+
+\vspace{20pt}
+
+{{ profile.name }}\\
+{{ profile.contacts.email }}{% if profile.contacts.phone %} \textbullet{} {{ profile.contacts.phone }}{% endif %}
+
+\end{document}

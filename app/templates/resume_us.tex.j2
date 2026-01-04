@@ -1,0 +1,89 @@
+% US Resume - 1 Page STRICT
+% American format: Concise, achievement-focused, NO personal details
+\documentclass[10pt]{article}
+\usepackage[letterpaper, margin=0.5in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+
+% Tight spacing for 1-page fit
+\setlist[itemize]{noitemsep, topsep=0pt, leftmargin=12pt, parsep=0pt, partopsep=0pt}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{0pt}
+\titlespacing*{\section}{0pt}{6pt}{3pt}
+\pagenumbering{gobble}
+
+\begin{document}
+
+% === HEADER: Name centered, contact on one line ===
+\begin{center}
+{\Large\bfseries {{ profile.name }}}\\[3pt]
+{{ profile.contacts.email }} \textbullet{} {{ profile.contacts.phone }}{% if profile.contacts.location %} \textbullet{} {{ profile.contacts.location }}{% endif %}
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
+{% for link in profile.contacts.links[:2] %}{{ link }}{% if not loop.last %} \textbullet{} {% endif %}{% endfor %}
+{% endif %}
+\end{center}
+
+\vspace{2pt}\hrule\vspace{6pt}
+
+% === PROFESSIONAL SUMMARY ===
+\textbf{SUMMARY}\\[2pt]
+{{ out.summary }}
+
+\vspace{4pt}\hrule\vspace{6pt}
+
+% === SKILLS (prominent for ATS) ===
+\textbf{SKILLS}\\[2pt]
+{{ out.skills_line|join(", ") }}
+
+\vspace{4pt}\hrule\vspace{6pt}
+
+% === EXPERIENCE (achievements with metrics) ===
+\textbf{EXPERIENCE}\\[4pt]
+{% for r in out.experience %}
+\textbf{ {{- r.title -}} } | {{ r.company }} \hfill {{ r.start or "" }} -- {{ r.end or "Present" }}
+\begin{itemize}
+{% for b in r.bullets %}\item {{ b }}
+{% endfor %}\end{itemize}
+{% if not loop.last %}\vspace{4pt}{% endif %}
+{% endfor %}
+
+{% if out.projects and out.projects|length > 0 %}
+\vspace{4pt}\hrule\vspace{6pt}
+
+% === PROJECTS ===
+\textbf{PROJECTS}\\[4pt]
+{% for p in out.projects %}
+\textbf{ {{- p.name -}} } | {{ p.stack|join(", ") }}
+\begin{itemize}
+{% for b in p.bullets %}\item {{ b }}
+{% endfor %}\end{itemize}
+{% if not loop.last %}\vspace{3pt}{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if out.education and out.education|length > 0 %}
+\vspace{4pt}\hrule\vspace{6pt}
+
+% === EDUCATION ===
+\textbf{EDUCATION}\\[3pt]
+{% for e in out.education %}
+\textbf{ {{- e.degree -}} } -- {{ e.school }} \hfill {{ e.period }}{% if not loop.last %}\\[2pt]{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if out.certifications and out.certifications|length > 0 %}
+\vspace{4pt}\hrule\vspace{6pt}
+
+% === CERTIFICATIONS ===
+\textbf{CERTIFICATIONS}\\[3pt]
+{% for c in out.certifications %}
+{{ c.name }} -- {{ c.issuer }}{% if c.date %} ({{ c.date }}){% endif %}{% if not loop.last %} \textbullet{} {% endif %}
+{% endfor %}
+{% endif %}
+
+\end{document}

@@ -1,0 +1,71 @@
+% EU Cover Letter - Formal & Comprehensive
+% European format: More formal tone, comprehensive qualifications
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{parskip}
+\usepackage{enumitem}
+\setlength{\parskip}{10pt}
+\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=16pt, parsep=2pt}
+\pagenumbering{gobble}
+
+\begin{document}
+
+% === SENDER INFO (formal EU style) ===
+\begin{flushleft}
+{{ profile.name }}\\
+{% if profile.contacts.location %}{{ profile.contacts.location }}\\{% endif %}
+{{ profile.contacts.email }}\\
+{% if profile.contacts.phone %}{{ profile.contacts.phone }}{% endif %}
+\end{flushleft}
+
+\vspace{6pt}
+
+% === DATE ===
+\today
+
+\vspace{10pt}
+
+% === RECIPIENT ===
+{{ out.address }}
+
+\vspace{10pt}
+
+% === SUBJECT LINE ===
+\textbf{Re: Application for {{ job.title }} at {{ job.company }}}
+
+\vspace{8pt}
+
+% === SALUTATION ===
+Dear Sir or Madam,
+
+% === OPENING ===
+{{ out.intro }}
+
+% === QUALIFICATIONS ===
+{{ out.why_you }}
+
+% === EVIDENCE - Detailed achievements ===
+{% if out.evidence and out.evidence|length > 0 %}
+I would like to highlight the following relevant achievements:
+\begin{itemize}
+{% for e in out.evidence %}\item {{ e }}
+{% endfor %}\end{itemize}
+{% endif %}
+
+% === MOTIVATION ===
+{{ out.why_them }}
+
+% === CLOSING ===
+{{ out.close }}
+
+\vspace{10pt}
+
+Yours faithfully,
+
+\vspace{24pt}
+
+{{ profile.name }}
+
+\end{document}

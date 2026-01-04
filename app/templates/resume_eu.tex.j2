@@ -1,0 +1,109 @@
+% EU Resume/CV - 2 Pages Allowed
+% European format: Comprehensive, formal, detailed sections
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=0.75in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+
+% Readable spacing for comprehensive CV
+\setlist[itemize]{noitemsep, topsep=2pt, leftmargin=14pt, parsep=1pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\pagenumbering{gobble}
+
+\begin{document}
+
+% === HEADER ===
+{\Large\bfseries {{ profile.name }}}\\[4pt]
+{{ profile.contacts.email }} \textbullet{} {{ profile.contacts.phone }}{% if profile.contacts.location %} \textbullet{} {{ profile.contacts.location }}{% endif %}
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
+{{ profile.contacts.links|join(" \\textbullet{} ") }}
+{% endif %}
+
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === PROFESSIONAL PROFILE ===
+\textbf{\large Professional Profile}\\[4pt]
+{{ out.summary }}
+
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === KEY COMPETENCIES ===
+\textbf{\large Key Competencies}\\[4pt]
+{{ out.skills_line|join(", ") }}
+
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === PROFESSIONAL EXPERIENCE ===
+\textbf{\large Professional Experience}\\[6pt]
+{% for r in out.experience %}
+\textbf{ {{- r.title -}} } --- {{ r.company }}\\
+\textit{ {{- r.start or "" -}} -- {{ r.end or "Present" -}} }
+\begin{itemize}
+{% for b in r.bullets %}\item {{ b }}
+{% endfor %}\end{itemize}
+{% if not loop.last %}\vspace{6pt}{% endif %}
+{% endfor %}
+
+{% if out.projects and out.projects|length > 0 %}
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === PROJECTS ===
+\textbf{\large Projects \& Portfolio}\\[6pt]
+{% for p in out.projects %}
+\textbf{ {{- p.name -}} } --- {{ p.stack|join(", ") }}
+\begin{itemize}
+{% for b in p.bullets %}\item {{ b }}
+{% endfor %}\end{itemize}
+{% if not loop.last %}\vspace{5pt}{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if out.education and out.education|length > 0 %}
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === EDUCATION ===
+\textbf{\large Education}\\[6pt]
+{% for e in out.education %}
+\textbf{ {{- e.school -}} }\\
+{{ e.degree }} \hfill {{ e.period }}{% if not loop.last %}\\[6pt]{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if out.certifications and out.certifications|length > 0 %}
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === CERTIFICATIONS ===
+\textbf{\large Certifications \& Training}\\[4pt]
+{% for c in out.certifications %}
+\textbullet{} {{ c.name }} -- {{ c.issuer }}{% if c.date %} \hfill {{ c.date }}{% endif %}{% if not loop.last %}\\[3pt]{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if out.awards and out.awards|length > 0 %}
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === AWARDS ===
+\textbf{\large Awards \& Recognition}\\[4pt]
+{% for a in out.awards %}
+\textbullet{} {{ a.name }} -- {{ a.by }}{% if a.date %} \hfill {{ a.date }}{% endif %}{% if not loop.last %}\\[3pt]{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if out.languages and out.languages|length > 0 %}
+\vspace{6pt}\hrule\vspace{8pt}
+
+% === LANGUAGES (important for EU) ===
+\textbf{\large Languages}\\[4pt]
+{% for l in out.languages %}
+{{ l.name }}{% if l.level %} -- {{ l.level }}{% endif %}{% if not loop.last %}, {% endif %}
+{% endfor %}
+{% endif %}
+
+\end{document}

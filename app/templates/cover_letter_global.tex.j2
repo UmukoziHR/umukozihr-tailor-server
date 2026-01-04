@@ -1,0 +1,57 @@
+% Global Cover Letter - Professional & Balanced
+% International format: Universal business style, professional tone
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{parskip}
+\usepackage{enumitem}
+\setlength{\parskip}{10pt}
+\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=16pt, parsep=2pt}
+\pagenumbering{gobble}
+
+\begin{document}
+
+% === HEADER ===
+{{ profile.contacts.location }} \hfill \today
+
+\vspace{12pt}
+
+% === RECIPIENT ===
+{{ out.address }}
+
+\vspace{10pt}
+
+% === SALUTATION ===
+Dear Hiring Team,
+
+% === OPENING ===
+{{ out.intro }}
+
+% === QUALIFICATIONS ===
+{{ out.why_you }}
+
+% === EVIDENCE ===
+{% if out.evidence and out.evidence|length > 0 %}
+Key achievements that demonstrate my fit for this role:
+\begin{itemize}
+{% for e in out.evidence %}\item {{ e }}
+{% endfor %}\end{itemize}
+{% endif %}
+
+% === MOTIVATION ===
+{{ out.why_them }}
+
+% === CLOSING ===
+{{ out.close }}
+
+\vspace{12pt}
+
+Sincerely,
+
+\vspace{20pt}
+
+{{ profile.name }}\\
+{{ profile.contacts.email }}{% if profile.contacts.phone %} \textbullet{} {{ profile.contacts.phone }}{% endif %}
+
+\end{document}

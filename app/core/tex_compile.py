@@ -24,15 +24,15 @@ env = Environment(
 )
 
 REGION_RESUME_TEMPLATE: dict[str, str] = {
-    "US": "resume_us_onepage.tex.j2",
-    "EU": "resume_eu_twopage.tex.j2",
-    "GL": "resume_gl_onepage.tex.j2",
+    "US": "resume_us.tex.j2",
+    "EU": "resume_eu.tex.j2",
+    "GL": "resume_global.tex.j2",
 }
 
 REGION_LETTER_TEMPLATE: dict[str, str] = {
-    "US": "cover_letter_simple.tex.j2",
-    "EU": "cover_letter_simple.tex.j2",
-    "GL": "cover_letter_standard_global.tex.j2",
+    "US": "cover_letter_us.tex.j2",
+    "EU": "cover_letter_eu.tex.j2",
+    "GL": "cover_letter_global.tex.j2",
 }
 
 def render_tex(resume_ctx:dict, cl_ctx:dict, region:str, out_base:str):
