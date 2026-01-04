@@ -1,433 +1,586 @@
-"""
-Admin dashboard routes for UmukoziHR Resume Tailor
-Provides analytics, user management, and system monitoring endpoints
-"""
+"""Admin Analytics API Routes
+v1.3 Final - Monitoring Dashboard Backend
 
+Provides endpoints for:
+- User activity analytics
+- Generation metrics
+- JD insights  
+- System health monitoring
+"""
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
-from uuid import UUID
-
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, distinct
+from sqlalchemy import func, desc, and_
+from pydantic import BaseModel
+from uuid import UUID
 
 from app.db.database import get_db
 from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
-from app.auth.auth import verify_token
+from app.auth.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-security = HTTPBearer(auto_error=False)
+# Router with /admin prefix - main.py includes without additional prefix
+router = APIRouter(prefix="/admin", tags=["admin"])
 
-# Admin user IDs - add admin user UUIDs here
-ADMIN_USER_IDS = [
-    # Add your admin user IDs here
-    # "uuid-of-admin-user"
-]
 
-def get_admin_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+# Response Models
+class UserActivityStats(BaseModel):
+    total_users: int
+    signups_today: int
+    signups_this_week: int
+    signups_this_month: int
+    verified_users: int
+    onboarding_completed: int
+    onboarding_in_progress: int
+    active_today: int
+    active_this_week: int
+
+
+class GenerationStats(BaseModel):
+    total_generations: int
+    successful_generations: int
+    failed_generations: int
+    success_rate: float
+    generations_today: int
+    generations_this_week: int
+    avg_total_duration: float
+    avg_llm_duration: float
+    resumes_generated: int
+    cover_letters_generated: int
+
+
+class JDInsights(BaseModel):
+    total_jobs: int
+    by_region: dict
+    by_industry: dict
+    by_role_type: dict
+    avg_jd_length: float
+
+
+class SystemHealthStats(BaseModel):
+    total_errors_today: int
+    total_errors_this_week: int
+    errors_by_type: dict
+    avg_response_time_ms: float
+    error_rate: float
+
+
+class DailyMetric(BaseModel):
+    date: str
+    count: int
+
+
+class SubscriptionStats(BaseModel):
+    free_users: int
+    pro_users: int
+    total_paid: int
+    africa_users: int
+    global_users: int
+    active_subscriptions: int
+    cancelled_subscriptions: int
+    expired_subscriptions: int
+    monthly_revenue_estimate: float
+    potential_revenue: float
+    conversion_rate: float
+    africa_conversion_rate: float
+    global_conversion_rate: float
+    total_generations_used: int
+    users_at_limit: int
+    avg_generations_per_user: float
+
+
+class AdminDashboardResponse(BaseModel):
+    user_activity: UserActivityStats
+    generation: GenerationStats
+    jd_insights: JDInsights
+    system_health: SystemHealthStats
+    subscription: SubscriptionStats
+    signups_trend: List[DailyMetric]
+    generations_trend: List[DailyMetric]
+
+
+def require_admin(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Dependency to require admin access - for now allows all authenticated users"""
+    user_id = current_user["user_id"]
+    
+    try:
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if user has is_admin flag
+        if hasattr(user, 'is_admin') and user.is_admin:
+            return {"user_id": user_id, "email": user.email}
+        
+        # For development: allow all authenticated users to view admin dashboard
+        return {"user_id": user_id, "email": user.email}
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+
+@router.get("/dashboard", response_model=AdminDashboardResponse)
+def get_admin_dashboard(
+    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Verify admin access"""
-    if not credentials:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    """GET /admin/dashboard - Main admin dashboard with all analytics"""
+    logger.info(f"Admin dashboard accessed by: {admin['email']}")
     
-    token = credentials.credentials
-    payload = verify_token(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    user_id = payload.get("sub")
-    user = db.query(User).filter(User.id == UUID(user_id)).first()
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    
-    # Check if user is admin (either in ADMIN_USER_IDS or has is_admin flag)
-    if hasattr(user, 'is_admin') and user.is_admin:
-        return user
-    if str(user.id) in ADMIN_USER_IDS:
-        return user
-    
-    # For development/demo: allow all authenticated users to view admin
-    # Remove this in production
-    return user
-
-
-@router.get("/admin/dashboard")
-def get_dashboard(
-    admin_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
-):
-    """
-    GET /admin/dashboard
-    Returns comprehensive dashboard stats for admin monitoring
-    """
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=7)
     month_start = today_start - timedelta(days=30)
     
-    # === USER ACTIVITY ===
-    total_users = db.query(func.count(User.id)).scalar() or 0
-    signups_today = db.query(func.count(User.id)).filter(User.created_at >= today_start).scalar() or 0
-    signups_this_week = db.query(func.count(User.id)).filter(User.created_at >= week_start).scalar() or 0
-    signups_this_month = db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar() or 0
+    # User Activity Stats
+    total_users = db.query(User).count()
+    signups_today = db.query(User).filter(User.created_at >= today_start).count()
+    signups_this_week = db.query(User).filter(User.created_at >= week_start).count()
+    signups_this_month = db.query(User).filter(User.created_at >= month_start).count()
     
-    verified_users = db.query(func.count(User.id)).filter(User.email_verified == True).scalar() or 0
+    try:
+        verified_users = db.query(User).filter(User.email_verified == True).count()
+    except:
+        verified_users = 0
     
-    # Users with profiles (completed onboarding)
-    onboarding_completed = db.query(func.count(distinct(Profile.user_id))).scalar() or 0
-    onboarding_in_progress = total_users - onboarding_completed
+    profiles_count = db.query(Profile).count()
+    try:
+        onboarding_completed = db.query(User).filter(User.onboarding_completed == True).count()
+        onboarding_completed = max(onboarding_completed, profiles_count)
+    except:
+        onboarding_completed = profiles_count
     
-    # Active users (had events)
-    active_today = db.query(func.count(distinct(UserEvent.user_id))).filter(
-        UserEvent.created_at >= today_start
-    ).scalar() or 0
-    active_this_week = db.query(func.count(distinct(UserEvent.user_id))).filter(
-        UserEvent.created_at >= week_start
-    ).scalar() or 0
+    try:
+        active_today = db.query(func.count(func.distinct(UserEvent.user_id))).filter(
+            and_(UserEvent.event_type == "login", UserEvent.created_at >= today_start)
+        ).scalar() or 0
+        active_this_week = db.query(func.count(func.distinct(UserEvent.user_id))).filter(
+            and_(UserEvent.event_type == "login", UserEvent.created_at >= week_start)
+        ).scalar() or 0
+    except:
+        active_today = 0
+        active_this_week = 0
     
-    # === GENERATION STATS ===
-    total_generations = db.query(func.count(GenerationMetric.id)).scalar() or 0
-    successful_generations = db.query(func.count(GenerationMetric.id)).filter(
-        GenerationMetric.success == True
-    ).scalar() or 0
-    failed_generations = total_generations - successful_generations
-    success_rate = round((successful_generations / total_generations * 100) if total_generations > 0 else 0, 1)
+    user_activity = UserActivityStats(
+        total_users=total_users,
+        signups_today=signups_today,
+        signups_this_week=signups_this_week,
+        signups_this_month=signups_this_month,
+        verified_users=verified_users,
+        onboarding_completed=onboarding_completed,
+        onboarding_in_progress=max(0, total_users - onboarding_completed),
+        active_today=active_today,
+        active_this_week=active_this_week
+    )
     
-    generations_today = db.query(func.count(GenerationMetric.id)).filter(
-        GenerationMetric.created_at >= today_start
-    ).scalar() or 0
-    generations_this_week = db.query(func.count(GenerationMetric.id)).filter(
-        GenerationMetric.created_at >= week_start
-    ).scalar() or 0
+    # Generation Stats
+    total_runs = db.query(Run).count()
+    successful_runs = db.query(Run).filter(Run.status == "completed").count()
     
-    # Avg durations
-    avg_total = db.query(func.avg(GenerationMetric.total_duration)).filter(
-        GenerationMetric.success == True
-    ).scalar() or 0
-    avg_llm = db.query(func.avg(GenerationMetric.llm_duration)).filter(
-        GenerationMetric.success == True
-    ).scalar() or 0
+    try:
+        failed_runs = db.query(UserEvent).filter(UserEvent.event_type == "generation_error").count()
+    except:
+        failed_runs = 0
     
-    # Resume/Cover letter counts
-    resumes_generated = db.query(func.count(GenerationMetric.id)).filter(
-        GenerationMetric.resume_pdf_success == True
-    ).scalar() or 0
-    cover_letters_generated = db.query(func.count(GenerationMetric.id)).filter(
-        GenerationMetric.cover_letter_pdf_success == True
-    ).scalar() or 0
+    generations_today = db.query(Run).filter(Run.created_at >= today_start).count()
+    generations_this_week = db.query(Run).filter(Run.created_at >= week_start).count()
     
-    # === JD INSIGHTS ===
-    total_jobs = db.query(func.count(Job.id)).scalar() or 0
+    try:
+        avg_durations = db.query(
+            func.avg(GenerationMetric.total_duration),
+            func.avg(GenerationMetric.llm_duration)
+        ).first()
+        avg_total_dur = avg_durations[0] or 0
+        avg_llm_dur = avg_durations[1] or 0
+        resume_success = db.query(GenerationMetric).filter(GenerationMetric.resume_pdf_success == True).count()
+        cover_success = db.query(GenerationMetric).filter(GenerationMetric.cover_letter_pdf_success == True).count()
+    except:
+        avg_total_dur = 0
+        avg_llm_dur = 0
+        resume_success = successful_runs
+        cover_success = successful_runs
     
-    # By region
-    region_counts = db.query(
-        GenerationMetric.region,
-        func.count(GenerationMetric.id)
-    ).group_by(GenerationMetric.region).all()
-    by_region = {r[0] or 'Unknown': r[1] for r in region_counts}
+    total_attempts = successful_runs + failed_runs
     
-    # By industry
-    industry_counts = db.query(
-        GenerationMetric.jd_industry,
-        func.count(GenerationMetric.id)
-    ).filter(GenerationMetric.jd_industry.isnot(None)).group_by(
-        GenerationMetric.jd_industry
-    ).all()
-    by_industry = {i[0]: i[1] for i in industry_counts}
+    generation_stats = GenerationStats(
+        total_generations=total_runs,
+        successful_generations=successful_runs,
+        failed_generations=failed_runs,
+        success_rate=round((successful_runs / total_attempts * 100) if total_attempts > 0 else 100.0, 1),
+        generations_today=generations_today,
+        generations_this_week=generations_this_week,
+        avg_total_duration=round(avg_total_dur, 2),
+        avg_llm_duration=round(avg_llm_dur, 2),
+        resumes_generated=resume_success or successful_runs,
+        cover_letters_generated=cover_success or successful_runs
+    )
     
-    # By role type
-    role_counts = db.query(
-        GenerationMetric.jd_role_type,
-        func.count(GenerationMetric.id)
-    ).filter(GenerationMetric.jd_role_type.isnot(None)).group_by(
-        GenerationMetric.jd_role_type
-    ).all()
-    by_role_type = {r[0]: r[1] for r in role_counts}
+    # JD Insights
+    total_jobs = db.query(Job).count()
     
-    avg_jd_length = db.query(func.avg(GenerationMetric.jd_text_length)).scalar() or 0
+    try:
+        region_counts = db.query(Job.region, func.count(Job.id)).group_by(Job.region).all()
+        by_region = {region: count for region, count in region_counts}
+    except:
+        by_region = {"US": 0, "EU": 0, "GL": 0}
     
-    # === SYSTEM HEALTH ===
-    errors_today = db.query(func.count(SystemLog.id)).filter(
-        and_(SystemLog.created_at >= today_start, SystemLog.level == 'ERROR')
-    ).scalar() or 0
-    errors_this_week = db.query(func.count(SystemLog.id)).filter(
-        and_(SystemLog.created_at >= week_start, SystemLog.level == 'ERROR')
-    ).scalar() or 0
+    try:
+        industry_counts = db.query(GenerationMetric.jd_industry, func.count(GenerationMetric.id)).group_by(GenerationMetric.jd_industry).all()
+        by_industry = {industry or "unknown": count for industry, count in industry_counts}
+    except:
+        by_industry = {}
     
-    # Errors by type
-    error_type_counts = db.query(
-        SystemLog.exception_type,
-        func.count(SystemLog.id)
-    ).filter(
-        and_(SystemLog.created_at >= week_start, SystemLog.level == 'ERROR')
-    ).group_by(SystemLog.exception_type).all()
-    errors_by_type = {e[0] or 'Unknown': e[1] for e in error_type_counts}
+    try:
+        role_counts = db.query(GenerationMetric.jd_role_type, func.count(GenerationMetric.id)).group_by(GenerationMetric.jd_role_type).all()
+        by_role_type = {role or "unknown": count for role, count in role_counts}
+    except:
+        by_role_type = {}
     
-    avg_response_time = db.query(func.avg(SystemLog.response_time_ms)).filter(
-        SystemLog.response_time_ms.isnot(None)
-    ).scalar() or 0
+    try:
+        avg_jd_length_result = db.query(func.avg(GenerationMetric.jd_text_length)).scalar() or 0
+    except:
+        avg_jd_length_result = 0
     
-    total_requests = db.query(func.count(SystemLog.id)).filter(
-        SystemLog.created_at >= week_start
-    ).scalar() or 1
-    error_rate = round((errors_this_week / total_requests * 100), 2)
+    jd_insights = JDInsights(
+        total_jobs=total_jobs,
+        by_region=by_region if by_region else {"US": 0, "EU": 0, "GL": 0},
+        by_industry=by_industry,
+        by_role_type=by_role_type,
+        avg_jd_length=round(avg_jd_length_result, 0)
+    )
     
-    # === SUBSCRIPTION STATS ===
-    free_users = db.query(func.count(User.id)).filter(
-        User.subscription_tier == 'free'
-    ).scalar() or total_users
-    pro_users = db.query(func.count(User.id)).filter(
-        User.subscription_tier == 'pro'
-    ).scalar() or 0
+    # System Health
+    try:
+        gen_errors_today = db.query(UserEvent).filter(
+            and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= today_start)
+        ).count()
+        gen_errors_this_week = db.query(UserEvent).filter(
+            and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= week_start)
+        ).count()
+    except:
+        gen_errors_today = 0
+        gen_errors_this_week = 0
     
-    # Region breakdown
-    africa_users = db.query(func.count(User.id)).filter(
-        User.region_group == 'africa'
-    ).scalar() or 0
-    global_users = db.query(func.count(User.id)).filter(
-        User.region_group == 'global'
-    ).scalar() or 0
+    try:
+        sys_errors_today = db.query(SystemLog).filter(
+            and_(SystemLog.level == "ERROR", SystemLog.created_at >= today_start)
+        ).count()
+        sys_errors_this_week = db.query(SystemLog).filter(
+            and_(SystemLog.level == "ERROR", SystemLog.created_at >= week_start)
+        ).count()
+    except:
+        sys_errors_today = 0
+        sys_errors_this_week = 0
     
-    # Pro users by region
-    africa_pro = db.query(func.count(User.id)).filter(
-        and_(User.region_group == 'africa', User.subscription_tier == 'pro')
-    ).scalar() or 0
-    global_pro = db.query(func.count(User.id)).filter(
-        and_(User.region_group == 'global', User.subscription_tier == 'pro')
-    ).scalar() or 0
+    errors_today = gen_errors_today + sys_errors_today
+    errors_this_week = gen_errors_this_week + sys_errors_this_week
     
-    # Conversion rates
-    conversion_rate = round((pro_users / total_users * 100) if total_users > 0 else 0, 1)
-    africa_conversion = round((africa_pro / africa_users * 100) if africa_users > 0 else 0, 1)
-    global_conversion = round((global_pro / global_users * 100) if global_users > 0 else 0, 1)
+    errors_by_type = {}
+    try:
+        gen_error_events = db.query(UserEvent).filter(
+            and_(UserEvent.event_type == "generation_error", UserEvent.created_at >= week_start)
+        ).limit(100).all()
+        for evt in gen_error_events:
+            if evt.event_data and isinstance(evt.event_data, dict):
+                error_msg = evt.event_data.get('error', 'unknown')
+                error_type = error_msg[:50] if error_msg else 'unknown'
+                errors_by_type[error_type] = errors_by_type.get(error_type, 0) + 1
+    except:
+        pass
     
-    # Revenue estimate: Africa $5/mo, Global $20/mo
-    monthly_revenue = (africa_pro * 5) + (global_pro * 20)
-    potential_revenue = (africa_users * 5) + (global_users * 20)
+    try:
+        avg_response = db.query(func.avg(SystemLog.response_time_ms)).filter(
+            SystemLog.created_at >= today_start
+        ).scalar() or 0
+        if not avg_response:
+            avg_gen_time = db.query(func.avg(GenerationMetric.total_duration)).filter(
+                GenerationMetric.created_at >= today_start
+            ).scalar()
+            avg_response = (avg_gen_time or 0) * 1000
+    except:
+        avg_response = 0
     
-    # Usage stats
-    total_generations_used = db.query(func.sum(User.monthly_generations_used)).scalar() or 0
-    users_at_limit = db.query(func.count(User.id)).filter(
-        and_(User.subscription_tier == 'free', User.monthly_generations_used >= 5)
-    ).scalar() or 0
-    avg_gen_per_user = round(total_generations_used / total_users if total_users > 0 else 0, 1)
+    total_gen_attempts = total_runs + failed_runs
+    error_rate = round((failed_runs / total_gen_attempts * 100) if total_gen_attempts > 0 else 0, 2)
     
-    # Subscription status
-    active_subs = pro_users
-    cancelled_subs = db.query(func.count(User.id)).filter(
-        User.subscription_status == 'cancelled'
-    ).scalar() or 0
-    expired_subs = db.query(func.count(User.id)).filter(
-        User.subscription_status == 'expired'
-    ).scalar() or 0
+    system_health = SystemHealthStats(
+        total_errors_today=errors_today,
+        total_errors_this_week=errors_this_week,
+        errors_by_type=errors_by_type,
+        avg_response_time_ms=round(avg_response, 2),
+        error_rate=error_rate
+    )
     
-    # === TRENDS ===
+    # Trends (last 7 days)
     signups_trend = []
     generations_trend = []
+    
     for i in range(7):
-        day_start = today_start - timedelta(days=6-i)
-        day_end = day_start + timedelta(days=1)
+        day = today_start - timedelta(days=i)
+        next_day = day + timedelta(days=1)
         
-        signup_count = db.query(func.count(User.id)).filter(
-            and_(User.created_at >= day_start, User.created_at < day_end)
-        ).scalar() or 0
-        signups_trend.append({"date": day_start.isoformat(), "count": signup_count})
+        signup_count = db.query(User).filter(
+            and_(User.created_at >= day, User.created_at < next_day)
+        ).count()
+        signups_trend.append(DailyMetric(date=day.strftime("%Y-%m-%d"), count=signup_count))
         
-        gen_count = db.query(func.count(GenerationMetric.id)).filter(
-            and_(GenerationMetric.created_at >= day_start, GenerationMetric.created_at < day_end)
-        ).scalar() or 0
-        generations_trend.append({"date": day_start.isoformat(), "count": gen_count})
+        gen_count = db.query(Run).filter(
+            and_(Run.created_at >= day, Run.created_at < next_day)
+        ).count()
+        generations_trend.append(DailyMetric(date=day.strftime("%Y-%m-%d"), count=gen_count))
     
-    return {
-        "user_activity": {
-            "total_users": total_users,
-            "signups_today": signups_today,
-            "signups_this_week": signups_this_week,
-            "signups_this_month": signups_this_month,
-            "verified_users": verified_users,
-            "onboarding_completed": onboarding_completed,
-            "onboarding_in_progress": onboarding_in_progress,
-            "active_today": active_today,
-            "active_this_week": active_this_week
-        },
-        "generation": {
-            "total_generations": total_generations,
-            "successful_generations": successful_generations,
-            "failed_generations": failed_generations,
-            "success_rate": success_rate,
-            "generations_today": generations_today,
-            "generations_this_week": generations_this_week,
-            "avg_total_duration": round(avg_total, 2),
-            "avg_llm_duration": round(avg_llm, 2),
-            "resumes_generated": resumes_generated,
-            "cover_letters_generated": cover_letters_generated
-        },
-        "jd_insights": {
-            "total_jobs": total_jobs,
-            "by_region": by_region,
-            "by_industry": by_industry,
-            "by_role_type": by_role_type,
-            "avg_jd_length": round(avg_jd_length, 0)
-        },
-        "system_health": {
-            "total_errors_today": errors_today,
-            "total_errors_this_week": errors_this_week,
-            "errors_by_type": errors_by_type,
-            "avg_response_time_ms": round(avg_response_time, 0),
-            "error_rate": error_rate
-        },
-        "subscription": {
-            "free_users": free_users,
-            "pro_users": pro_users,
-            "total_paid": pro_users,
-            "africa_users": africa_users,
-            "global_users": global_users,
-            "active_subscriptions": active_subs,
-            "cancelled_subscriptions": cancelled_subs,
-            "expired_subscriptions": expired_subs,
-            "monthly_revenue_estimate": monthly_revenue,
-            "potential_revenue": potential_revenue,
-            "conversion_rate": conversion_rate,
-            "africa_conversion_rate": africa_conversion,
-            "global_conversion_rate": global_conversion,
-            "total_generations_used": total_generations_used,
-            "users_at_limit": users_at_limit,
-            "avg_generations_per_user": avg_gen_per_user
-        },
-        "signups_trend": signups_trend,
-        "generations_trend": generations_trend
-    }
+    signups_trend.reverse()
+    generations_trend.reverse()
+    
+    # Subscription Stats
+    try:
+        free_users = db.query(User).filter(
+            (User.subscription_tier == "free") | (User.subscription_tier == None)
+        ).count()
+        pro_users = db.query(User).filter(User.subscription_tier == "pro").count()
+        
+        africa_users = db.query(User).filter(User.region_group == "africa").count()
+        global_users = db.query(User).filter(
+            (User.region_group == "global") | (User.region_group == None)
+        ).count()
+        
+        active_subs = db.query(User).filter(User.subscription_status == "active").count()
+        cancelled_subs = db.query(User).filter(User.subscription_status == "cancelled").count()
+        expired_subs = db.query(User).filter(User.subscription_status == "expired").count()
+        
+        africa_pro = db.query(User).filter(
+            and_(User.subscription_tier == "pro", User.region_group == "africa")
+        ).count()
+        global_pro = db.query(User).filter(
+            and_(User.subscription_tier == "pro", 
+                 (User.region_group == "global") | (User.region_group == None))
+        ).count()
+        
+        monthly_revenue = (africa_pro * 5) + (global_pro * 20)
+        
+        africa_free = db.query(User).filter(
+            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
+                 User.region_group == "africa")
+        ).count()
+        global_free = db.query(User).filter(
+            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
+                 (User.region_group == "global") | (User.region_group == None))
+        ).count()
+        potential_revenue = (africa_free * 5) + (global_free * 20) + monthly_revenue
+        
+        total_gens_used = db.query(func.sum(User.monthly_generations_used)).scalar() or 0
+        users_at_limit = db.query(User).filter(
+            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
+                 User.monthly_generations_used >= 5)
+        ).count()
+        avg_gens = db.query(func.avg(User.monthly_generations_used)).scalar() or 0
+        
+        africa_conversion = round((africa_pro / africa_users * 100) if africa_users > 0 else 0, 1)
+        global_conversion = round((global_pro / global_users * 100) if global_users > 0 else 0, 1)
+        
+    except Exception as e:
+        logger.warning(f"Error fetching subscription stats: {e}")
+        free_users = total_users
+        pro_users = 0
+        africa_users = 0
+        global_users = total_users
+        active_subs = 0
+        cancelled_subs = 0
+        expired_subs = 0
+        monthly_revenue = 0
+        potential_revenue = 0
+        total_gens_used = 0
+        users_at_limit = 0
+        avg_gens = 0
+        africa_conversion = 0
+        global_conversion = 0
+    
+    subscription_stats = SubscriptionStats(
+        free_users=free_users,
+        pro_users=pro_users,
+        total_paid=pro_users,
+        africa_users=africa_users,
+        global_users=global_users,
+        active_subscriptions=active_subs,
+        cancelled_subscriptions=cancelled_subs,
+        expired_subscriptions=expired_subs,
+        monthly_revenue_estimate=monthly_revenue,
+        potential_revenue=potential_revenue,
+        conversion_rate=round((pro_users / total_users * 100) if total_users > 0 else 0, 1),
+        africa_conversion_rate=africa_conversion,
+        global_conversion_rate=global_conversion,
+        total_generations_used=total_gens_used,
+        users_at_limit=users_at_limit,
+        avg_generations_per_user=round(avg_gens, 1)
+    )
+    
+    return AdminDashboardResponse(
+        user_activity=user_activity,
+        generation=generation_stats,
+        jd_insights=jd_insights,
+        system_health=system_health,
+        subscription=subscription_stats,
+        signups_trend=signups_trend,
+        generations_trend=generations_trend
+    )
 
 
-@router.get("/admin/users")
-def get_users(
-    page: int = 1,
-    page_size: int = 20,
-    admin_user: User = Depends(get_admin_user),
+@router.get("/users")
+def list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Get paginated user list"""
+    """GET /admin/users - List all users with pagination"""
     offset = (page - 1) * page_size
     
-    users = db.query(User).order_by(User.created_at.desc()).offset(offset).limit(page_size).all()
-    total = db.query(func.count(User.id)).scalar() or 0
+    total = db.query(User).count()
+    users = db.query(User).order_by(desc(User.created_at)).offset(offset).limit(page_size).all()
     
-    return {
-        "users": [
-            {
-                "id": str(u.id),
-                "email": u.email,
-                "created_at": u.created_at.isoformat(),
-                "subscription_tier": getattr(u, 'subscription_tier', 'free'),
-                "region_group": getattr(u, 'region_group', 'global'),
-                "monthly_generations_used": getattr(u, 'monthly_generations_used', 0)
-            }
-            for u in users
-        ],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+    user_list = []
+    for user in users:
+        user_dict = {
+            "id": str(user.id),
+            "email": user.email,
+            "created_at": user.created_at.isoformat()
+        }
+        if hasattr(user, 'is_admin'):
+            user_dict["is_admin"] = user.is_admin
+        if hasattr(user, 'subscription_tier'):
+            user_dict["subscription_tier"] = user.subscription_tier
+        if hasattr(user, 'region_group'):
+            user_dict["region_group"] = user.region_group
+        if hasattr(user, 'monthly_generations_used'):
+            user_dict["monthly_generations_used"] = user.monthly_generations_used
+        user_list.append(user_dict)
+    
+    return {"users": user_list, "total": total, "page": page, "page_size": page_size}
 
 
-@router.get("/admin/generations")
-def get_generations(
-    page: int = 1,
-    page_size: int = 20,
+@router.get("/generations")
+def list_generations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
-    admin_user: User = Depends(get_admin_user),
+    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Get paginated generation history"""
+    """GET /admin/generations - List all generation runs"""
     offset = (page - 1) * page_size
     
-    query = db.query(GenerationMetric)
-    if status == "success":
-        query = query.filter(GenerationMetric.success == True)
-    elif status == "failed":
-        query = query.filter(GenerationMetric.success == False)
+    query = db.query(Run, Job, User).join(Job, Run.job_id == Job.id).join(User, Run.user_id == User.id)
     
-    generations = query.order_by(GenerationMetric.created_at.desc()).offset(offset).limit(page_size).all()
+    if status:
+        query = query.filter(Run.status == status)
+    
     total = query.count()
+    results = query.order_by(desc(Run.created_at)).offset(offset).limit(page_size).all()
     
-    return {
-        "generations": [
-            {
-                "id": str(g.id),
-                "run_id": str(g.run_id),
-                "user_id": str(g.user_id),
-                "success": g.success,
-                "total_duration": g.total_duration,
-                "region": g.region,
-                "jd_industry": g.jd_industry,
-                "created_at": g.created_at.isoformat()
-            }
-            for g in generations
-        ],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+    runs_list = [
+        {
+            "run_id": str(run.id),
+            "user_email": user.email,
+            "company": job.company,
+            "title": job.title,
+            "region": job.region,
+            "status": run.status,
+            "profile_version": run.profile_version,
+            "created_at": run.created_at.isoformat()
+        }
+        for run, job, user in results
+    ]
+    
+    return {"runs": runs_list, "total": total, "page": page, "page_size": page_size}
 
 
-@router.get("/admin/errors")
-def get_errors(
-    page: int = 1,
-    page_size: int = 20,
-    level: Optional[str] = None,
-    admin_user: User = Depends(get_admin_user),
+@router.get("/errors")
+def list_errors(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    level: str = Query("ERROR"),
+    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Get paginated error logs"""
+    """GET /admin/errors - List errors"""
     offset = (page - 1) * page_size
     
-    query = db.query(SystemLog)
-    if level:
-        query = query.filter(SystemLog.level == level.upper())
-    else:
-        query = query.filter(SystemLog.level == 'ERROR')
+    logs_list = []
+    total = 0
     
-    logs = query.order_by(SystemLog.created_at.desc()).offset(offset).limit(page_size).all()
-    total = query.count()
+    try:
+        gen_errors = db.query(UserEvent).filter(
+            UserEvent.event_type == "generation_error"
+        ).order_by(desc(UserEvent.created_at)).offset(offset).limit(page_size).all()
+        
+        gen_error_count = db.query(UserEvent).filter(UserEvent.event_type == "generation_error").count()
+        
+        for evt in gen_errors:
+            error_data = evt.event_data or {}
+            logs_list.append({
+                "id": str(evt.id),
+                "level": "ERROR",
+                "source": "generation",
+                "message": error_data.get('error', 'Generation failed')[:200],
+                "exception_type": "generation_error",
+                "request_path": "/api/v1/generate",
+                "user_id": str(evt.user_id) if evt.user_id else None,
+                "created_at": evt.created_at.isoformat()
+            })
+        total += gen_error_count
+    except Exception as e:
+        logger.warning(f"Error fetching generation errors: {e}")
     
-    return {
-        "errors": [
-            {
+    try:
+        query = db.query(SystemLog).filter(SystemLog.level == level)
+        sys_count = query.count()
+        logs = query.order_by(desc(SystemLog.created_at)).offset(offset).limit(page_size).all()
+        
+        for log in logs:
+            logs_list.append({
                 "id": str(log.id),
                 "level": log.level,
-                "message": log.message[:200],
+                "source": "system",
+                "message": log.message[:200] if log.message else "System error",
                 "exception_type": log.exception_type,
                 "request_path": log.request_path,
+                "user_id": str(log.user_id) if log.user_id else None,
                 "created_at": log.created_at.isoformat()
-            }
-            for log in logs
-        ],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+            })
+        total += sys_count
+    except Exception as e:
+        logger.warning(f"Error fetching system logs: {e}")
+    
+    logs_list.sort(key=lambda x: x['created_at'], reverse=True)
+    logs_list = logs_list[:page_size]
+    
+    return {"logs": logs_list, "total": total, "page": page, "page_size": page_size}
 
 
-@router.post("/admin/users/{user_id}/make-admin")
-def make_admin(
+@router.post("/users/{user_id}/make-admin")
+def make_user_admin(
     user_id: str,
-    admin_user: User = Depends(get_admin_user),
+    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Make a user an admin"""
-    user = db.query(User).filter(User.id == UUID(user_id)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    if hasattr(user, 'is_admin'):
-        user.is_admin = True
-        db.commit()
-    
-    return {"success": True, "message": f"User {user.email} is now an admin"}
+    """POST /admin/users/{user_id}/make-admin - Grant admin access"""
+    try:
+        user_uuid = UUID(user_id)
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        if hasattr(user, 'is_admin'):
+            user.is_admin = True
+            db.commit()
+            logger.info(f"Admin access granted to {user.email} by {admin['email']}")
+        
+        return {"success": True, "message": f"Admin access granted to {user.email}"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
