@@ -1,11 +1,12 @@
 """Admin Analytics API Routes
-v1.3 Final - Monitoring Dashboard Backend
+v1.4 - Monitoring Dashboard Backend with Subscription Analytics
 
 Provides endpoints for:
-- User activity analytics
-- Generation metrics
-- JD insights  
-- System health monitoring
+- User activity analytics (signups, onboarding, active users)
+- Generation metrics (success rates, durations, PDF/DOCX output)
+- JD insights (by region, industry, role type)
+- System health monitoring (errors, response times)
+- Subscription & revenue analytics (Africa $5, Global $20 pricing)
 """
 import logging
 from datetime import datetime, timedelta
