@@ -191,8 +191,12 @@ def bundle(run_id:str):
 
 def bundle_pdfs_only(run_id: str, user_name: str = "Resume_User"):
     """
-    Create ZIP bundle with PDFs ONLY (no TEX files).
+    Create ZIP bundle with PDFs and DOCX files.
     Uses short, user-friendly naming: Firstname_Lastname_Resumes_Year.zip
+    
+    Includes:
+    - PDF files (for ATS and print)
+    - DOCX files (for user editing)
     """
     import re
     
@@ -213,7 +217,7 @@ def bundle_pdfs_only(run_id: str, user_name: str = "Resume_User"):
     zip_path = os.path.join(ART_DIR, zip_filename)
     
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # ONLY add PDFs - no TEX files (they cause Windows path length issues)
+        # Add PDFs (primary output for ATS and print)
         pdf_files = glob.glob(os.path.join(ART_DIR, f"*{run_id}*.pdf")) + \
                     glob.glob(os.path.join(ART_DIR, f"{run_id}_*.pdf"))
         # Also look for files matching the new naming pattern
@@ -226,8 +230,18 @@ def bundle_pdfs_only(run_id: str, user_name: str = "Resume_User"):
             zf.write(f, arcname=os.path.basename(f))
             logger.info(f"Added PDF to bundle: {os.path.basename(f)}")
         
+        # Add DOCX files (for user editing - key feature request)
+        all_docx = set()
+        for pattern in [f"*{run_id[:6]}*.docx", f"{run_id}_*.docx"]:
+            for f in glob.glob(os.path.join(ART_DIR, pattern)):
+                all_docx.add(f)
+        
+        for f in all_docx:
+            zf.write(f, arcname=os.path.basename(f))
+            logger.info(f"Added DOCX to bundle: {os.path.basename(f)}")
+        
         # TEX files are intentionally NOT included to avoid Windows path length issues
         # Users can download them individually if needed
     
-    logger.info(f"Bundle created: {zip_path} ({len(all_pdfs)} PDFs, 0 TEX files)")
+    logger.info(f"Bundle created: {zip_path} ({len(all_pdfs)} PDFs, {len(all_docx)} DOCX files)")
     return zip_path

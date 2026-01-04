@@ -2,29 +2,39 @@
 \usepackage[margin=1in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{parskip}
+\setlength{\parskip}{10pt}
 \pagenumbering{gobble}
 
 \begin{document}
 {{ profile.contacts.location }} \hfill \today
 
+\vspace{10pt}
+
 Hiring Committee\\
 {{ job.company }}
 
+\vspace{10pt}
+
 \noindent \textbf{Application: {{ job.title }}}
+
+\vspace{8pt}
 
 {{ out.intro }}
 
 {{ out.why_you }}
 
 \begin{itemize}
-{% for e in out.evidence %}\item {{ e }}{% endfor %}
-\end{itemize}
+{% for e in out.evidence %}\item {{ e }}
+{% endfor %}\end{itemize}
 
 {{ out.why_them }}
 
 {{ out.close }}
 
-Best regards,\\
-{{ profile.name }}\\
-{{ profile.contacts.email }} • {{ profile.contacts.phone }}
+\vspace{12pt}
+
+Best regards,\\[4pt]
+{{ profile.name }}\\[2pt]
+{{ profile.contacts.email }} \textbullet{} {{ profile.contacts.phone }}
 \end{document}

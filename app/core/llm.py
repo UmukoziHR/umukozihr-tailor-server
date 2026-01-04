@@ -15,12 +15,14 @@ SYSTEM = (
     "Return ONLY valid JSON matching the provided schema. "
     "RULES: "
     "1) NEVER invent companies, schools, dates, or achievements - use ONLY what exists in the profile. "
-    "2) Use exact JD keywords ONLY when they truthfully match the candidate's experience. "
-    "3) Respect region style rules (US=1 page, EU=2 pages allowed, GL=1 page). "
-    "4) Write concise, metric-first quantitative bullets following <action verb → measurable result>. "
-    "5) Include relevant certifications, awards, and languages when they match the JD requirements. "
-    "6) For cover letter, reference specific company values/projects from the JD. "
-    "7) Tailor the summary to directly address the job's key requirements."
+    "2) DATES ARE SACRED: Copy start/end dates EXACTLY as provided in the profile - NEVER change years (e.g., if profile says 2025, output 2025 NOT 2024). "
+    "3) Use exact JD keywords ONLY when they truthfully match the candidate's experience. "
+    "4) Respect region style rules (US=1 page, EU=2 pages allowed, GL=1 page). "
+    "5) Write concise, metric-first quantitative bullets following <action verb → measurable result>. "
+    "6) NEVER repeat the same bullet point or achievement - each bullet must be unique. "
+    "7) Include relevant certifications, awards, and languages when they match the JD requirements. "
+    "8) For cover letter, reference specific company values/projects from the JD. "
+    "9) Tailor the summary to directly address the job's key requirements."
 )
 
 # Strict JSON Schema for gemini to avoid hallucinations and stick to our convention
@@ -120,7 +122,9 @@ def build_user_prompt(
         f"3. Include certifications/awards/languages ONLY if they add value for this specific role.\n"
         f"4. Tailor the summary to directly address the job's top 3 requirements.\n"
         f"5. For cover letter, reference specific details from the JD (company projects, values, tech stack).\n"
-        f"6. Return ONLY valid JSON matching the schema. No markdown, no extra text."
+        f"6. CRITICAL: Copy ALL dates (start, end, period) EXACTLY from the profile - do NOT change any year values.\n"
+        f"7. CRITICAL: Do NOT repeat any bullet point - each achievement must appear only once.\n"
+        f"8. Return ONLY valid JSON matching the schema. No markdown, no extra text."
     )
 
 def call_llm(prompt:str)->str:

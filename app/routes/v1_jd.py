@@ -19,6 +19,100 @@ router = APIRouter()
 # Jina AI Reader - renders JavaScript and returns clean text
 JINA_READER_URL = "https://r.jina.ai/"
 
+# Patterns indicating garbage/error content rather than a real JD
+GARBAGE_PATTERNS = [
+    # Error pages
+    r'access\s*denied',
+    r'page\s*not\s*found',
+    r'404\s*(error|not\s*found)',
+    r'403\s*forbidden',
+    r'error\s*occurred',
+    r'something\s*went\s*wrong',
+    r'unable\s*to\s*(load|fetch|find)',
+    r'this\s*page\s*(is\s*not|cannot)',
+    # Auth walls
+    r'sign\s*in\s*(to\s*view|required|to\s*continue)',
+    r'login\s*(required|to\s*view|to\s*continue)',
+    r'please\s*log\s*in',
+    r'create\s*(an\s*)?account\s*to',
+    r'join\s*to\s*view',
+    r'authwall',
+    # Bot detection
+    r'captcha',
+    r'verify\s*you\s*are\s*(human|not\s*a\s*robot)',
+    r'cloudflare',
+    r'security\s*check',
+    r'bot\s*detection',
+    r'unusual\s*traffic',
+    # Cookie/consent
+    r'cookie\s*(policy|consent)',
+    r'accept\s*(all\s*)?cookies',
+    r'we\s*use\s*cookies',
+    # Generic errors
+    r'oops',
+    r'sorry,\s*(we|this)',
+    r'temporarily\s*unavailable',
+    r'try\s*again\s*later',
+    r'session\s*(expired|timeout)',
+]
+
+# Keywords that should be present in a valid job description
+JD_REQUIRED_KEYWORDS = [
+    'experience', 'requirements', 'responsibilities', 'qualifications',
+    'skills', 'role', 'position', 'about', 'we are looking', 'looking for',
+    'job description', 'what you', 'who you', 'you will', 'your responsibilities',
+    'your role', 'team', 'company', 'benefits', 'salary', 'compensation',
+    'apply', 'candidate', 'work with', 'collaborate', 'develop', 'manage',
+]
+
+
+def validate_jd_content(text: str) -> tuple[bool, str]:
+    """
+    Validate that the fetched content is actually a job description,
+    not an error page, captcha, or garbage.
+    
+    Returns: (is_valid, error_message)
+    """
+    if not text:
+        return False, "No content extracted from the page."
+    
+    text_lower = text.lower()
+    text_len = len(text)
+    
+    # Too short to be a real JD
+    if text_len < 300:
+        return False, "Content too short to be a valid job description."
+    
+    # Check for garbage patterns
+    for pattern in GARBAGE_PATTERNS:
+        if re.search(pattern, text_lower):
+            # Don't flag if the pattern is just a small part of a larger text
+            if text_len < 1000:
+                return False, "The page returned an error or requires login. Please copy the job description and paste it manually."
+    
+    # Check if content has JD-like keywords
+    keyword_count = sum(1 for kw in JD_REQUIRED_KEYWORDS if kw in text_lower)
+    
+    # Need at least 3 JD-related keywords for a valid JD
+    if keyword_count < 3:
+        # Check if text is mostly navigation/boilerplate
+        nav_patterns = ['menu', 'navigation', 'footer', 'header', 'copyright', 'privacy policy', 'terms of']
+        nav_count = sum(1 for p in nav_patterns if p in text_lower)
+        
+        if nav_count >= 2 and keyword_count < 2:
+            return False, "The page appears to be mostly navigation or boilerplate. Please copy the actual job description and paste it manually."
+    
+    # Check for too much repetition (sign of broken scraping)
+    words = text.split()
+    if len(words) > 50:
+        unique_words = set(words)
+        repetition_ratio = len(unique_words) / len(words)
+        if repetition_ratio < 0.2:  # Less than 20% unique words = very repetitive
+            return False, "Content appears corrupted or repetitive. Please copy the job description manually."
+    
+    return True, ""
+
+
 # Common headers to mimic a real browser
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -546,10 +640,22 @@ def fetch_jd(request: JDFetchRequest):
         result = fetch_basic(url)
     
     if result and result.get('success'):
-        logger.info(f"Successfully extracted JD: title={result.get('title')}, company={result.get('company')}, length={len(result.get('jd_text', ''))}")
+        jd_text = result.get('jd_text', '')
+        
+        # Validate that the content is actually a job description
+        is_valid, error_msg = validate_jd_content(jd_text)
+        
+        if not is_valid:
+            logger.warning(f"JD validation failed for {url}: {error_msg}")
+            return JDFetchResponse(
+                success=False,
+                message=error_msg
+            )
+        
+        logger.info(f"Successfully extracted JD: title={result.get('title')}, company={result.get('company')}, length={len(jd_text)}")
         return JDFetchResponse(
             success=True,
-            jd_text=result.get('jd_text'),
+            jd_text=jd_text,
             company=result.get('company'),
             title=result.get('title'),
             region=result.get('region'),
@@ -558,7 +664,7 @@ def fetch_jd(request: JDFetchRequest):
     else:
         return JDFetchResponse(
             success=False,
-            message="Could not extract job description. Please paste JD manually."
+            message="Could not extract job description from this URL. Please copy the job description from the job posting and paste it manually."
         )
 
 

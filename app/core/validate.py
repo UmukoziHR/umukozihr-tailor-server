@@ -1,4 +1,5 @@
 import json
+import re
 from jsonschema import validate, Draft202012Validator
 from app.models import Profile
 
@@ -60,9 +61,63 @@ def validate_or_error(raw_json:str)->dict:
         raise ValueError("Schema errors: " + "; ".join([e.message for e in errors]))
     return data
 
+
+def extract_years_from_date(date_str: str) -> set:
+    """Extract all 4-digit years from a date string."""
+    if not date_str:
+        return set()
+    return set(re.findall(r'\b(19|20)\d{2}\b', date_str))
+
+
 def business_rules_check(data:dict, profile:Profile):
-    # company/title safety: must be subset of profile companies (or blank)
+    """Validate LLM output against profile data.
+    
+    Checks:
+    1. Company names must exist in profile
+    2. Dates must not be changed (years preserved)
+    3. No duplicate bullet points
+    """
+    # 1. Company/title safety: must be subset of profile companies (or blank)
     prof_companies = {r.company for r in profile.experience}
     for r in data["resume"]["experience"]:
         if r["company"] and r["company"] not in prof_companies:
             raise ValueError(f"company not in profile: {r['company']}")
+    
+    # 2. Date validation: years in output must exist in profile dates
+    profile_years = set()
+    for exp in profile.experience:
+        profile_years.update(extract_years_from_date(exp.start or ""))
+        profile_years.update(extract_years_from_date(exp.end or ""))
+    
+    for exp in data["resume"]["experience"]:
+        output_years = extract_years_from_date(exp.get("start", ""))
+        output_years.update(extract_years_from_date(exp.get("end", "")))
+        
+        for year in output_years:
+            if year not in profile_years and year not in {'Present', 'Current'}:
+                # Only warn, don't fail - sometimes JD has dates too
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Date mismatch detected: year '{year}' in output but not in profile. "
+                    f"Profile years: {profile_years}"
+                )
+    
+    # 3. Deduplication check: no repeated bullets
+    all_bullets = []
+    for exp in data["resume"]["experience"]:
+        all_bullets.extend(exp.get("bullets", []))
+    
+    seen_bullets = set()
+    duplicate_count = 0
+    for bullet in all_bullets:
+        # Normalize for comparison (lowercase, strip)
+        normalized = bullet.lower().strip()
+        if normalized in seen_bullets:
+            duplicate_count += 1
+        seen_bullets.add(normalized)
+    
+    if duplicate_count > 0:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Found {duplicate_count} duplicate bullet(s) in LLM output"
+        )

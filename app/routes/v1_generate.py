@@ -11,6 +11,7 @@ import uuid as python_uuid
 from app.models import GenerateRequest, Profile, ProfileV3
 from app.core.tailor import run_tailor
 from app.core.tex_compile import render_tex, compile_tex, bundle_pdfs_only
+from app.core.docx_compile import render_docx
 from app.db.database import get_db
 from app.db.models import User, Profile as DBProfile, Job as DBJob, Run as DBRun
 from app.auth.auth import verify_token
@@ -154,6 +155,10 @@ def process_single_job(
     """
     Process a single job - designed to run in parallel.
     Returns: (artifact, llm_duration, tex_duration, pdf_duration, resume_success, cover_success, llm_output)
+    
+    Generates:
+    - PDF files (for ATS/print)
+    - DOCX files (for user editing - key feature request)
     """
     from app.models import JobJD
     
@@ -183,6 +188,16 @@ def process_single_job(
     cover_letter_pdf_success = compile_tex(cover_letter_tex_path)
     pdf_duration = time.time() - pdf_start
     
+    # DOCX generation (for user editing - key feature request)
+    try:
+        resume_docx_path, cover_docx_path = render_docx(resume_ctx, cover_letter_ctx, base)
+        docx_success = True
+    except Exception as e:
+        logger.warning(f"DOCX generation failed: {e}")
+        resume_docx_path = None
+        cover_docx_path = None
+        docx_success = False
+    
     # Build artifact
     resume_pdf_path = resume_tex_path.replace('.tex', '.pdf')
     cover_letter_pdf_path = cover_letter_tex_path.replace('.tex', '.pdf')
@@ -205,6 +220,13 @@ def process_single_job(
     
     if cover_letter_pdf_success and os.path.exists(cover_letter_pdf_path):
         artifact["cover_letter_pdf"] = f"/artifacts/{os.path.basename(cover_letter_pdf_path)}"
+    
+    # Add DOCX paths to artifact (for user editing)
+    if resume_docx_path and os.path.exists(resume_docx_path):
+        artifact["resume_docx"] = f"/artifacts/{os.path.basename(resume_docx_path)}"
+    
+    if cover_docx_path and os.path.exists(cover_docx_path):
+        artifact["cover_letter_docx"] = f"/artifacts/{os.path.basename(cover_docx_path)}"
     
     return (artifact, llm_duration, tex_duration, pdf_duration, resume_pdf_success, cover_letter_pdf_success, out)
 
@@ -479,7 +501,7 @@ def generate(
                     user.usage_reset_at = now + timedelta(days=30)
                 
                 # Increment usage by number of successful jobs
-                successful_count = len([r for r in results if r.get('resume_success') or r.get('cover_success')])
+                successful_count = len([r for r in job_results if r.get('resume_success') or r.get('cover_success')])
                 user.monthly_generations_used = (user.monthly_generations_used or 0) + successful_count
                 db.commit()
                 logger.info(f"Usage updated: user={user_id}, added={successful_count}, total={user.monthly_generations_used}")
