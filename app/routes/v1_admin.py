@@ -74,6 +74,15 @@ class DailyMetric(BaseModel):
     count: int
 
 
+class GeolocationStats(BaseModel):
+    """Real user geolocation for product analytics"""
+    by_country: dict  # {country_name: count}
+    by_city: dict     # {city: count}
+    top_countries: List[dict]  # [{name, code, count}]
+    top_cities: List[dict]     # [{city, country, count}]
+    unknown_location: int
+
+
 class SubscriptionStats(BaseModel):
     free_users: int
     pro_users: int
@@ -99,6 +108,7 @@ class AdminDashboardResponse(BaseModel):
     jd_insights: JDInsights
     system_health: SystemHealthStats
     subscription: SubscriptionStats
+    geolocation: GeolocationStats
     signups_trend: List[DailyMetric]
     generations_trend: List[DailyMetric]
 
@@ -420,12 +430,78 @@ def get_admin_dashboard(
         avg_generations_per_user=round(avg_gens, 1)
     )
     
+    # Geolocation Stats - Real user locations for product analytics
+    try:
+        # Users by country (actual geolocation, not pricing region)
+        country_counts = db.query(
+            User.country_name, User.country, func.count(User.id)
+        ).filter(
+            User.country_name != None
+        ).group_by(User.country_name, User.country).all()
+        
+        by_country = {}
+        top_countries = []
+        for country_name, country_code, count in country_counts:
+            if country_name:
+                by_country[country_name] = count
+                top_countries.append({
+                    "name": country_name,
+                    "code": country_code or "XX",
+                    "count": count
+                })
+        
+        # Sort by count descending, take top 10
+        top_countries = sorted(top_countries, key=lambda x: x["count"], reverse=True)[:10]
+        
+        # Users by city
+        city_counts = db.query(
+            User.city, User.country_name, func.count(User.id)
+        ).filter(
+            User.city != None
+        ).group_by(User.city, User.country_name).all()
+        
+        by_city = {}
+        top_cities = []
+        for city, country_name, count in city_counts:
+            if city:
+                by_city[city] = count
+                top_cities.append({
+                    "city": city,
+                    "country": country_name or "Unknown",
+                    "count": count
+                })
+        
+        # Sort by count descending, take top 10
+        top_cities = sorted(top_cities, key=lambda x: x["count"], reverse=True)[:10]
+        
+        # Users with unknown location
+        unknown_location = db.query(User).filter(
+            (User.country_name == None) | (User.country_name == "")
+        ).count()
+        
+    except Exception as e:
+        logger.warning(f"Error fetching geolocation stats: {e}")
+        by_country = {}
+        by_city = {}
+        top_countries = []
+        top_cities = []
+        unknown_location = total_users
+    
+    geolocation_stats = GeolocationStats(
+        by_country=by_country,
+        by_city=by_city,
+        top_countries=top_countries,
+        top_cities=top_cities,
+        unknown_location=unknown_location
+    )
+    
     return AdminDashboardResponse(
         user_activity=user_activity,
         generation=generation_stats,
         jd_insights=jd_insights,
         system_health=system_health,
         subscription=subscription_stats,
+        geolocation=geolocation_stats,
         signups_trend=signups_trend,
         generations_trend=generations_trend
     )
