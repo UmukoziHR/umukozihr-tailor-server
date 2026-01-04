@@ -3,7 +3,9 @@
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage{parskip}
+\usepackage{enumitem}
 \setlength{\parskip}{10pt}
+\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=16pt, parsep=2pt}
 \pagenumbering{gobble}
 
 \begin{document}
@@ -11,22 +13,20 @@
 
 \vspace{10pt}
 
-Hiring Committee\\
-{{ job.company }}
+{{ out.address }}
 
-\vspace{10pt}
+\vspace{6pt}
 
-\noindent \textbf{Application: {{ job.title }}}
-
-\vspace{8pt}
-
-{{ out.intro }}
+\noindent {{ out.intro }}
 
 {{ out.why_you }}
 
+{% if out.evidence and out.evidence|length > 0 %}
+\noindent Key achievements that demonstrate my fit for this role:
 \begin{itemize}
 {% for e in out.evidence %}\item {{ e }}
 {% endfor %}\end{itemize}
+{% endif %}
 
 {{ out.why_them }}
 
@@ -34,7 +34,7 @@ Hiring Committee\\
 
 \vspace{12pt}
 
-Best regards,\\[4pt]
+Sincerely,\\[8pt]
 {{ profile.name }}\\[2pt]
 {{ profile.contacts.email }} \textbullet{} {{ profile.contacts.phone }}
 \end{document}

@@ -330,24 +330,61 @@ def create_cover_letter_docx(profile: dict, cover_letter_out: dict, job: dict, o
     subject_para.paragraph_format.space_after = Pt(12)
     
     # === GREETING ===
-    greeting = cover_letter_out.get('greeting', 'Dear Hiring Manager,')
+    # Use address field from LLM or default greeting
+    greeting = cover_letter_out.get('address', 'Dear Hiring Manager,')
     greeting_para = doc.add_paragraph()
     greeting_para.add_run(greeting)
-    greeting_para.paragraph_format.space_after = Pt(10)
+    greeting_para.paragraph_format.space_after = Pt(12)
     
-    # === BODY PARAGRAPHS ===
-    body_paragraphs = cover_letter_out.get('body_paragraphs', [])
-    for para_text in body_paragraphs:
-        body_para = doc.add_paragraph()
-        body_para.add_run(para_text)
-        body_para.paragraph_format.space_after = Pt(10)
-        body_para.paragraph_format.first_line_indent = Inches(0.5)
+    # === BODY CONTENT ===
+    # The LLM outputs structured fields: intro, why_you, evidence, why_them, close
+    # Combine them into a proper cover letter format
+    
+    # Introduction paragraph
+    intro = cover_letter_out.get('intro', '')
+    if intro:
+        intro_para = doc.add_paragraph()
+        intro_para.add_run(intro)
+        intro_para.paragraph_format.space_after = Pt(10)
+        intro_para.paragraph_format.line_spacing = 1.15
+    
+    # Why you're a great fit paragraph
+    why_you = cover_letter_out.get('why_you', '')
+    if why_you:
+        why_para = doc.add_paragraph()
+        why_para.add_run(why_you)
+        why_para.paragraph_format.space_after = Pt(10)
+        why_para.paragraph_format.line_spacing = 1.15
+    
+    # Evidence bullet points (key achievements)
+    evidence = cover_letter_out.get('evidence', [])
+    if evidence:
+        for point in evidence:
+            bullet_para = doc.add_paragraph(style='List Bullet')
+            bullet_para.add_run(point)
+            bullet_para.paragraph_format.space_after = Pt(4)
+            bullet_para.paragraph_format.left_indent = Inches(0.25)
+    
+    # Why them paragraph (company-specific interest)
+    why_them = cover_letter_out.get('why_them', '')
+    if why_them:
+        doc.add_paragraph()  # Add spacing after bullets
+        why_them_para = doc.add_paragraph()
+        why_them_para.add_run(why_them)
+        why_them_para.paragraph_format.space_after = Pt(10)
+        why_them_para.paragraph_format.line_spacing = 1.15
     
     # === CLOSING ===
-    closing = cover_letter_out.get('closing', 'Sincerely,')
+    close_text = cover_letter_out.get('close', '')
+    if close_text:
+        close_para = doc.add_paragraph()
+        close_para.add_run(close_text)
+        close_para.paragraph_format.space_after = Pt(16)
+        close_para.paragraph_format.line_spacing = 1.15
+    
+    # Closing salutation
     closing_para = doc.add_paragraph()
-    closing_para.add_run(closing)
-    closing_para.paragraph_format.space_before = Pt(10)
+    closing_para.add_run("Sincerely,")
     closing_para.paragraph_format.space_after = Pt(24)
     
     # === SIGNATURE ===

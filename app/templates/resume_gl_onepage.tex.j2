@@ -1,77 +1,80 @@
-\documentclass[11pt]{article}
-\usepackage[margin=0.85in]{geometry}
+\documentclass[10pt]{article}
+\usepackage[margin=0.5in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage{enumitem}
 \usepackage{parskip}
-\setlist[itemize]{noitemsep, topsep=2pt, leftmargin=*, parsep=1pt}
-\setlength{\parskip}{4pt}
+\usepackage{titlesec}
+\setlist[itemize]{noitemsep, topsep=0pt, leftmargin=12pt, parsep=0pt, partopsep=0pt}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{0pt}
+\titlespacing*{\section}{0pt}{4pt}{2pt}
 \pagenumbering{gobble}
 
 \begin{document}
-{\LARGE\bfseries {{ profile.name }}}\\[4pt]
+{\Large\bfseries {{ profile.name }}}\\[2pt]
 {{ profile.contacts.email }} \textbullet{} {{ profile.contacts.phone }} \textbullet{} {{ profile.contacts.location }}
-{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[1pt]
 {{ profile.contacts.links|join(" \textbullet{} ") }}
 {% endif %}
-\vspace{8pt}\hrule\vspace{10pt}
+\vspace{4pt}\hrule\vspace{4pt}
 
-\textbf{\large Profile}\\[4pt]
+\textbf{Profile}\\[2pt]
 {{ out.summary }}
-\vspace{10pt}\hrule\vspace{10pt}
+\vspace{4pt}\hrule\vspace{4pt}
 
-\textbf{\large Core Skills}\\[4pt]
+\textbf{Core Skills}\\[2pt]
 {{ out.skills_line|join(", ") }}
-\vspace{10pt}\hrule\vspace{10pt}
+\vspace{4pt}\hrule\vspace{4pt}
 
-\textbf{\large Experience}\\[6pt]
+\textbf{Experience}\\[3pt]
 {% for r in out.experience %}
-\textbf{ {{- r.title -}} } --- {{ r.company }} \hfill {{ r.start or "" }}--{{ r.end or "" }}\\[2pt]
+\textbf{ {{- r.title -}} } --- {{ r.company }} \hfill {{ r.start or "" }}--{{ r.end or "" }}\\[1pt]
 \begin{itemize}
 {% for b in r.bullets %}\item {{ b }}
 {% endfor %}\end{itemize}
-{% if not loop.last %}\vspace{6pt}{% endif %}
+{% if not loop.last %}\vspace{3pt}{% endif %}
 {% endfor %}
 
 {% if out.projects and out.projects|length > 0 %}
-\vspace{10pt}\hrule\vspace{10pt}
-\textbf{\large Projects}\\[6pt]
+\vspace{4pt}\hrule\vspace{4pt}
+\textbf{Projects}\\[3pt]
 {% for p in out.projects %}
-\textbf{ {{- p.name -}} } --- {{ p.stack|join(", ") }}\\[2pt]
+\textbf{ {{- p.name -}} } --- {{ p.stack|join(", ") }}\\[1pt]
 \begin{itemize}
 {% for b in p.bullets %}\item {{ b }}
 {% endfor %}\end{itemize}
-{% if not loop.last %}\vspace{6pt}{% endif %}
+{% if not loop.last %}\vspace{3pt}{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.education and out.education|length > 0 %}
-\vspace{10pt}\hrule\vspace{10pt}
-\textbf{\large Education}\\[6pt]
+\vspace{4pt}\hrule\vspace{4pt}
+\textbf{Education}\\[3pt]
 {% for e in out.education %}
-\textbf{ {{- e.school -}} } --- {{ e.degree }} \hfill {{ e.period }}{% if not loop.last %}\\[4pt]{% endif %}
+\textbf{ {{- e.school -}} } --- {{ e.degree }} \hfill {{ e.period }}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.certifications and out.certifications|length > 0 %}
-\vspace{10pt}\hrule\vspace{10pt}
-\textbf{\large Certifications}\\[6pt]
+\vspace{4pt}\hrule\vspace{4pt}
+\textbf{Certifications}\\[3pt]
 {% for c in out.certifications %}
-\textbf{ {{- c.name -}} } --- {{ c.issuer }}{% if c.date %} \hfill {{ c.date }}{% endif %}{% if not loop.last %}\\[4pt]{% endif %}
+\textbullet{} {{ c.name }} --- {{ c.issuer }}{% if c.date %} \hfill {{ c.date }}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.awards and out.awards|length > 0 %}
-\vspace{10pt}\hrule\vspace{10pt}
-\textbf{\large Awards}\\[6pt]
+\vspace{4pt}\hrule\vspace{4pt}
+\textbf{Awards}\\[3pt]
 {% for a in out.awards %}
-\textbf{ {{- a.name -}} } --- {{ a.by }}{% if a.date %} \hfill {{ a.date }}{% endif %}{% if not loop.last %}\\[4pt]{% endif %}
+\textbullet{} {{ a.name }} --- {{ a.by }}{% if a.date %} \hfill {{ a.date }}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.languages and out.languages|length > 0 %}
-\vspace{10pt}\hrule\vspace{10pt}
-\textbf{\large Languages}\\[4pt]
+\vspace{4pt}\hrule\vspace{4pt}
+\textbf{Languages}\\[2pt]
 {% for l in out.languages %}
 {{ l.name }}{% if l.level %} ({{ l.level }}){% endif %}{% if not loop.last %}, {% endif %}
 {% endfor %}

@@ -2,25 +2,38 @@
 \usepackage[margin=1in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{parskip}
+\usepackage{enumitem}
+\setlength{\parskip}{10pt}
+\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=16pt, parsep=2pt}
 \pagenumbering{gobble}
 
 \begin{document}
 {{ profile.contacts.location }} \hfill \today
 
-Dear Hiring Team at {{ job.company }},
+\vspace{10pt}
+
+{{ out.address }}
+
+\vspace{6pt}
 
 {{ out.intro }}
 
 {{ out.why_you }}
 
+{% if out.evidence and out.evidence|length > 0 %}
+\noindent Key achievements:
 \begin{itemize}
-{% for e in out.evidence %}\item {{ e }}{% endfor %}
-\end{itemize}
+{% for e in out.evidence %}\item {{ e }}
+{% endfor %}\end{itemize}
+{% endif %}
 
 {{ out.why_them }}
 
 {{ out.close }}
 
-Sincerely,\\
+\vspace{10pt}
+
+Sincerely,\\[6pt]
 {{ profile.name }}
 \end{document}
