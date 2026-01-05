@@ -20,15 +20,15 @@ SYSTEM = (
     "4) Respect region style rules (US=1 page, EU=2 pages allowed, GL=1 page). "
     "5) Write concise, metric-first quantitative bullets following <action verb -> measurable result>. "
     "6) NEVER repeat the same bullet point or achievement - each bullet must be unique. "
-    "7) Include relevant certifications, awards, and languages when they match the JD requirements. "
-    "8) For cover letter, reference specific company values/projects from the JD. "
-    "9) Tailor the summary to directly address the job's key requirements. "
-    "10) SMART EXPERIENCE SELECTION: Analyze the JD, then select and ORDER experiences by relevance to THIS specific job. "
+    "7) CERTIFICATIONS: Copy ALL certifications from profile VERBATIM - name, issuer, date must match exactly. Include ALL that are relevant. "
+    "8) LANGUAGES: Copy ALL languages from profile VERBATIM - the actual language name (English, French, etc) and level. NEVER output 'Language' as placeholder. "
+    "9) For cover letter, reference specific company values/projects from the JD. "
+    "10) Tailor the summary to directly address the job's key requirements. "
+    "11) SMART EXPERIENCE SELECTION: Analyze the JD, then select and ORDER experiences by relevance to THIS specific job. "
     "    - Include 2-4 most relevant experiences (more if highly relevant, fewer if not). "
     "    - Put the MOST relevant experience FIRST, regardless of date. "
     "    - Different jobs should result in different experience selections and orderings. "
-    "    - If a role has zero relevance to the job, you may omit it to save space. "
-    "11) NEVER use em dashes (--) anywhere. Use regular hyphens (-) only."
+    "12) NEVER use em dashes. Use regular hyphens (-) only."
 )
 
 # Strict JSON Schema for gemini to avoid hallucinations and stick to our convention
@@ -125,13 +125,14 @@ def build_user_prompt(
         f"INSTRUCTIONS:\n"
         f"1. Analyze the JD carefully for keywords, requirements, and company values.\n"
         f"2. SELECT experiences by RELEVANCE to this job - order by relevance, not by date.\n"
-        f"3. Include certifications/awards/languages ONLY if they add value for this specific role.\n"
-        f"4. Tailor the summary to directly address the job's top 3 requirements.\n"
-        f"5. For cover letter, reference specific details from the JD (company projects, values, tech stack).\n"
-        f"6. CRITICAL: Copy ALL dates (start, end, period) EXACTLY from the profile - do NOT change any year values.\n"
-        f"7. CRITICAL: Do NOT repeat any bullet point - each achievement must appear only once.\n"
-        f"8. CRITICAL: NEVER use em dashes. Use hyphens (-) only.\n"
-        f"9. Return ONLY valid JSON matching the schema. No markdown, no extra text."
+        f"3. COPY ALL certifications from the profile EXACTLY as written - include ALL relevant ones.\n"
+        f"4. COPY ALL languages from the profile EXACTLY - use actual language names (English, French, etc), NOT 'Language'.\n"
+        f"5. Tailor the summary to directly address the job's top 3 requirements.\n"
+        f"6. For cover letter, reference specific details from the JD (company projects, values, tech stack).\n"
+        f"7. CRITICAL: Copy ALL dates (start, end, period) EXACTLY from the profile - do NOT change any year values.\n"
+        f"8. CRITICAL: Do NOT repeat any bullet point - each achievement must appear only once.\n"
+        f"9. CRITICAL: NEVER use em dashes or long dashes. Use hyphens (-) only.\n"
+        f"10. Return ONLY valid JSON matching the schema. No markdown, no extra text."
     )
 
 def call_llm(prompt:str)->str:

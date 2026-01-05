@@ -9,7 +9,7 @@ from datetime import datetime
 import uuid as python_uuid
 
 from app.models import GenerateRequest, Profile, ProfileV3
-from app.core.tailor import run_tailor
+from app.core.tailor import run_tailor, detect_region_from_jd
 from app.core.tex_compile import render_tex, compile_tex, bundle_pdfs_only
 from app.core.docx_compile import render_docx
 from app.db.database import get_db
@@ -163,6 +163,17 @@ def process_single_job(
     from app.models import JobJD
     
     j = JobJD(**job_data) if isinstance(job_data, dict) else job_data
+    
+    # Auto-detect region from job description
+    detected_region = detect_region_from_jd(j.jd_text, j.company)
+    j = JobJD(
+        id=j.id,
+        region=detected_region,
+        company=j.company,
+        title=j.title,
+        jd_text=j.jd_text
+    )
+    logger.info(f"Processing job '{j.title}' at {j.company}: auto-detected region = {detected_region}")
     
     # Generate short filename
     base = generate_file_basename(user_name, j.company, j.title)
@@ -350,16 +361,21 @@ def generate(
         logger.error("No profile provided and user not authenticated")
         raise HTTPException(status_code=400, detail="Profile required for unauthenticated requests")
 
-    # Persist jobs for authenticated users
+    # Persist jobs for authenticated users (with auto-region detection)
     db_jobs = []
     if user_id:
         for j in request.jobs:
+            # Auto-detect region from JD if not explicitly set or set to default
+            detected_region = detect_region_from_jd(j.jd_text, j.company)
+            job_region = detected_region  # Always use auto-detected region
+            logger.info(f"Job '{j.title}' at {j.company}: auto-detected region = {detected_region}")
+            
             db_job = DBJob(
                 user_id=python_uuid.UUID(user_id),
                 company=j.company,
                 title=j.title,
                 jd_text=j.jd_text,
-                region=j.region,
+                region=job_region,
                 created_at=datetime.utcnow()
             )
             db.add(db_job)

@@ -1,5 +1,6 @@
 # Improved Tailor pipeline: pre-filter -> LLM -> validate -> repair
 # v1.3: Now passes FULL ProfileV3 to LLM for complete context
+# v1.4: Added auto-region detection from job location
 
 import re, json, logging
 from collections import Counter
@@ -10,6 +11,43 @@ from app.models import Profile, JobJD, LLMOutput, ProfileV3
 logger = logging.getLogger(__name__)
 
 STOP = set("""a an the and or for to of in on at with from by as is are was were be been being will would should could into about over under within across""".split())
+
+# Location patterns for auto-region detection
+US_PATTERNS = [
+    r'\b(usa|united states|u\.s\.?a?\.?|america)\b',
+    r'\b(new york|nyc|san francisco|sf|los angeles|la|seattle|austin|boston|chicago|denver|atlanta|miami|dallas|houston|phoenix|philadelphia|washington\s*d\.?c\.?)\b',
+    r'\b(california|texas|florida|washington|colorado|massachusetts|georgia|illinois|arizona|pennsylvania|virginia|north carolina|ohio|michigan|new jersey|oregon|nevada)\b',
+    r'\b(silicon valley|bay area|wall street)\b',
+]
+
+EU_PATTERNS = [
+    r'\b(europe|european union|eu\b|emea)\b',
+    r'\b(london|berlin|paris|amsterdam|dublin|munich|frankfurt|zurich|stockholm|copenhagen|barcelona|madrid|milan|vienna|brussels|lisbon|prague|warsaw|oslo|helsinki)\b',
+    r'\b(uk|united kingdom|britain|england|scotland|wales|ireland|germany|france|netherlands|switzerland|sweden|denmark|spain|italy|austria|belgium|portugal|poland|norway|finland|czech)\b',
+]
+
+def detect_region_from_jd(jd_text: str, company: str = "") -> str:
+    """
+    Auto-detect region (US/EU/GL) from job description text and company name.
+    Returns 'US', 'EU', or 'GL' (Global/default).
+    """
+    text = f"{jd_text} {company}".lower()
+    
+    # Check US patterns
+    for pattern in US_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            logger.info(f"Auto-detected region: US (matched pattern: {pattern})")
+            return "US"
+    
+    # Check EU patterns
+    for pattern in EU_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            logger.info(f"Auto-detected region: EU (matched pattern: {pattern})")
+            return "EU"
+    
+    # Default to Global
+    logger.info("Auto-detected region: GL (no specific region patterns found)")
+    return "GL"
 
 def norm_tokens(text:str):
     tokens = re.findall(r"[A-Za-z0-9\+\#\.]+", text.lower())
