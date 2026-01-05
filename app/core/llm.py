@@ -18,11 +18,13 @@ SYSTEM = (
     "2) DATES ARE SACRED: Copy start/end dates EXACTLY as provided in the profile - NEVER change years (e.g., if profile says 2025, output 2025 NOT 2024). "
     "3) Use exact JD keywords ONLY when they truthfully match the candidate's experience. "
     "4) Respect region style rules (US=1 page, EU=2 pages allowed, GL=1 page). "
-    "5) Write concise, metric-first quantitative bullets following <action verb → measurable result>. "
+    "5) Write concise, metric-first quantitative bullets following <action verb -> measurable result>. "
     "6) NEVER repeat the same bullet point or achievement - each bullet must be unique. "
     "7) Include relevant certifications, awards, and languages when they match the JD requirements. "
     "8) For cover letter, reference specific company values/projects from the JD. "
-    "9) Tailor the summary to directly address the job's key requirements."
+    "9) Tailor the summary to directly address the job's key requirements. "
+    "10) INCLUDE ALL EXPERIENCE ENTRIES from the profile - never drop any job/role. Each experience must appear in output. "
+    "11) NEVER use em dashes (—) anywhere. Use regular hyphens (-) or double hyphens (--) only."
 )
 
 # Strict JSON Schema for gemini to avoid hallucinations and stick to our convention
@@ -112,7 +114,7 @@ def build_user_prompt(
         f"{jd_text}\n\n"
         f"=== REGION FORMATTING RULES ===\n"
         f"{json.dumps(region_rules, ensure_ascii=False)}\n\n"
-        f"=== PRE-SELECTED TOP BULLETS (prioritize these for experience section) ===\n"
+        f"=== PRE-SELECTED TOP BULLETS (prioritize these, but include ALL experiences) ===\n"
         f"{selected_bullets_json}\n\n"
         f"=== OUTPUT SCHEMA (follow exactly) ===\n"
         f"{schema_json}\n\n"
@@ -124,7 +126,9 @@ def build_user_prompt(
         f"5. For cover letter, reference specific details from the JD (company projects, values, tech stack).\n"
         f"6. CRITICAL: Copy ALL dates (start, end, period) EXACTLY from the profile - do NOT change any year values.\n"
         f"7. CRITICAL: Do NOT repeat any bullet point - each achievement must appear only once.\n"
-        f"8. Return ONLY valid JSON matching the schema. No markdown, no extra text."
+        f"8. CRITICAL: Include EVERY experience entry from the profile - do NOT drop any roles/jobs.\n"
+        f"9. CRITICAL: NEVER use em dashes (—). Use hyphens (-) or double hyphens (--) only.\n"
+        f"10. Return ONLY valid JSON matching the schema. No markdown, no extra text."
     )
 
 def call_llm(prompt:str)->str:
