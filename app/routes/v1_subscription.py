@@ -36,6 +36,7 @@ from app.core.paystack import (
     verify_transaction,
     verify_webhook_signature
 )
+from app.routes.v1_auth import get_client_ip, get_location_from_ip
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,7 @@ def get_subscription_status(
 
 @router.get("/plans", response_model=PlansResponse)
 def get_plans(
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -186,6 +188,24 @@ def get_plans(
         user = db.query(User).filter(User.id == user_uuid).first()
         
         country_code = user.country if user else None
+        
+        # If no country stored, detect from IP on-the-fly
+        if not country_code:
+            client_ip = get_client_ip(request)
+            if client_ip and client_ip != 'unknown':
+                location = get_location_from_ip(client_ip)
+                country_code = location.get('country')
+                logger.info(f"Detected country from IP for pricing: {country_code}")
+                
+                # Also update user's stored location while we're at it
+                if user and country_code:
+                    user.country = country_code
+                    user.country_name = location.get('country_name')
+                    user.city = location.get('city')
+                    user.region_group = 'africa' if is_african_user(country_code) else 'global'
+                    db.commit()
+                    logger.info(f"Updated user {user_id} location: {country_code}")
+        
         is_africa = is_african_user(country_code)
         
         plans = get_all_plans(country_code)
@@ -204,6 +224,7 @@ def get_plans(
 
 @router.post("/upgrade-intent")
 async def create_upgrade_intent(
+    request: Request,
     tier: str = Query("pro", description="Target tier"),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -247,8 +268,22 @@ async def create_upgrade_intent(
                 requires_payment_setup=True
             )
         
-        # Create Paystack checkout session
+        # Ensure we have country for correct pricing
         country_code = user.country
+        if not country_code:
+            client_ip = get_client_ip(request)
+            if client_ip and client_ip != 'unknown':
+                location = get_location_from_ip(client_ip)
+                country_code = location.get('country')
+                if country_code:
+                    user.country = country_code
+                    user.country_name = location.get('country_name')
+                    user.city = location.get('city')
+                    user.region_group = 'africa' if is_african_user(country_code) else 'global'
+                    db.commit()
+                    logger.info(f"Updated user {user_id} location at checkout: {country_code}")
+        
+        # Create Paystack checkout session
         price = get_user_price(tier, country_code)
         
         logger.info(f"Creating Paystack checkout: user={user_id}, tier={tier}, price=${price}/month")
