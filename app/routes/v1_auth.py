@@ -35,26 +35,77 @@ def get_client_ip(request: Request) -> str:
 
 
 def get_location_from_ip(ip: str) -> dict:
-    """Get country/city from IP using free geolocation API"""
-    try:
-        # Skip localhost/private IPs
-        if ip in ['127.0.0.1', 'localhost', 'unknown'] or ip.startswith('10.') or ip.startswith('192.168.'):
-            return {'country': None, 'country_name': None, 'city': None}
-        
-        # Use ip-api.com (free, no API key needed, 45 requests/minute)
-        response = httpx.get(f'http://ip-api.com/json/{ip}?fields=status,country,countryCode,city', timeout=3.0)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('status') == 'success':
-                return {
-                    'country': data.get('countryCode'),  # 2-letter code like 'GH', 'US'
-                    'country_name': data.get('country'),  # Full name like 'Ghana', 'United States'
-                    'city': data.get('city')
-                }
-    except Exception as e:
-        logger.warning(f"Failed to get location for IP {ip}: {e}")
+    """Get country/city from IP using multiple geolocation APIs with fallback"""
+    # Skip localhost/private IPs
+    if ip in ['127.0.0.1', 'localhost', 'unknown', ''] or ip.startswith('10.') or ip.startswith('192.168.') or ip.startswith('172.'):
+        logger.info(f"Skipping geolocation for private/local IP: {ip}")
+        return {'country': None, 'country_name': None, 'city': None}
     
+    # Try multiple geo APIs with fallback
+    apis = [
+        # ipinfo.io - very reliable, 50k/month free
+        {
+            'url': f'https://ipinfo.io/{ip}/json',
+            'parser': lambda d: {
+                'country': d.get('country'),
+                'country_name': get_country_name(d.get('country')),
+                'city': d.get('city')
+            } if d.get('country') else None
+        },
+        # ip-api.com - backup (HTTP only but reliable)
+        {
+            'url': f'http://ip-api.com/json/{ip}?fields=status,country,countryCode,city',
+            'parser': lambda d: {
+                'country': d.get('countryCode'),
+                'country_name': d.get('country'),
+                'city': d.get('city')
+            } if d.get('status') == 'success' else None
+        },
+        # ipapi.co - another backup
+        {
+            'url': f'https://ipapi.co/{ip}/json/',
+            'parser': lambda d: {
+                'country': d.get('country_code'),
+                'country_name': d.get('country_name'),
+                'city': d.get('city')
+            } if d.get('country_code') else None
+        }
+    ]
+    
+    for api in apis:
+        try:
+            response = httpx.get(api['url'], timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                result = api['parser'](data)
+                if result and result.get('country'):
+                    logger.info(f"Geo lookup success for {ip}: {result['country']} ({result['country_name']})")
+                    return result
+        except Exception as e:
+            logger.warning(f"Geo API failed for {ip} ({api['url'][:30]}...): {e}")
+            continue
+    
+    logger.warning(f"All geo APIs failed for IP: {ip}")
     return {'country': None, 'country_name': None, 'city': None}
+
+
+# Country code to name mapping for ipinfo.io which only returns code
+COUNTRY_NAMES = {
+    'GH': 'Ghana', 'NG': 'Nigeria', 'KE': 'Kenya', 'ZA': 'South Africa', 'EG': 'Egypt',
+    'MA': 'Morocco', 'TZ': 'Tanzania', 'ET': 'Ethiopia', 'UG': 'Uganda', 'RW': 'Rwanda',
+    'SN': 'Senegal', 'CI': "Côte d'Ivoire", 'CM': 'Cameroon', 'ZW': 'Zimbabwe', 'ZM': 'Zambia',
+    'US': 'United States', 'GB': 'United Kingdom', 'DE': 'Germany', 'FR': 'France', 'NL': 'Netherlands',
+    'CA': 'Canada', 'AU': 'Australia', 'IN': 'India', 'AE': 'United Arab Emirates', 'SG': 'Singapore',
+    'JP': 'Japan', 'CN': 'China', 'BR': 'Brazil', 'MX': 'Mexico', 'ES': 'Spain', 'IT': 'Italy',
+    'PL': 'Poland', 'SE': 'Sweden', 'NO': 'Norway', 'DK': 'Denmark', 'FI': 'Finland', 'IE': 'Ireland',
+    'CH': 'Switzerland', 'AT': 'Austria', 'BE': 'Belgium', 'PT': 'Portugal', 'CZ': 'Czech Republic',
+}
+
+def get_country_name(code: str) -> str:
+    """Get country name from 2-letter code"""
+    if not code:
+        return None
+    return COUNTRY_NAMES.get(code.upper(), code)
 
 class SignupRequest(BaseModel):
     email: EmailStr
@@ -168,8 +219,22 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
         logger.info(f"Password verified successfully for user: {user.id}")
 
-        # Update last login timestamp
+        # Update last login timestamp and refresh location
+        client_ip = get_client_ip(request)
         user.last_login_at = datetime.utcnow()
+        
+        # Refresh location on every login (catches VPN changes, fixes NULL countries)
+        if client_ip and client_ip != 'unknown':
+            location = get_location_from_ip(client_ip)
+            if location.get('country'):
+                old_country = user.country
+                user.country = location.get('country')
+                user.country_name = location.get('country_name')
+                user.city = location.get('city')
+                user.region_group = 'africa' if is_african_user(user.country) else 'global'
+                if old_country != user.country:
+                    logger.info(f"User location updated: {old_country} -> {user.country} ({user.region_group})")
+        
         db.commit()
 
         # Track login event
