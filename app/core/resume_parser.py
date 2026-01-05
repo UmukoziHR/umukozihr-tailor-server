@@ -25,6 +25,8 @@ RULES:
 5. Parse skills with appropriate levels (beginner, intermediate, expert)
 6. Extract bullet points as they appear, preserving the original wording
 7. For LinkedIn PDF exports, adapt to their specific format
+8. LANGUAGES: Extract actual language names (English, French, Spanish, etc) - NEVER output "Language" as a placeholder
+9. CERTIFICATIONS: Extract all certification names with issuer - include ALL found
 
 Return ONLY valid JSON matching the exact schema provided."""
 
@@ -225,7 +227,7 @@ VALID_SKILL_LEVELS = {"beginner", "intermediate", "expert"}
 def sanitize_extracted_profile(profile: dict) -> dict:
     """
     Sanitize extracted profile data to ensure it matches schema requirements.
-    Fixes common extraction issues like empty skill levels.
+    Fixes common extraction issues like empty skill levels and placeholder text.
     """
     # Sanitize skills - ensure valid level
     skills = profile.get("skills", [])
@@ -235,6 +237,30 @@ def sanitize_extracted_profile(profile: dict) -> dict:
             # Default to intermediate if level is missing or invalid
             skill["level"] = "intermediate"
             logger.debug(f"Skill '{skill.get('name', 'unknown')}' level defaulted to 'intermediate'")
+    
+    # Sanitize languages - remove placeholder entries like "Language"
+    languages = profile.get("languages", [])
+    sanitized_languages = []
+    for lang in languages:
+        name = lang.get("name", "").strip()
+        # Skip if name is empty, just "Language", or other obvious placeholders
+        if name and name.lower() not in ["language", "lang", ""]:
+            sanitized_languages.append(lang)
+        else:
+            logger.debug(f"Filtered out placeholder language entry: {lang}")
+    profile["languages"] = sanitized_languages
+    
+    # Sanitize certifications - remove placeholder entries
+    certifications = profile.get("certifications", [])
+    sanitized_certs = []
+    for cert in certifications:
+        name = cert.get("name", "").strip()
+        # Skip if name is empty or placeholder
+        if name and name.lower() not in ["certification", "cert", ""]:
+            sanitized_certs.append(cert)
+        else:
+            logger.debug(f"Filtered out placeholder certification entry: {cert}")
+    profile["certifications"] = sanitized_certs
     
     # Ensure basics has required fields with defaults
     if "basics" not in profile:
