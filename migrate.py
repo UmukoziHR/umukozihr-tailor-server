@@ -116,6 +116,10 @@ def migrate_v1_2_to_v1_3(db):
         
         if 'usage_reset_at' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN usage_reset_at TIMESTAMP")
+        
+        # v1.5 Avatar column
+        if 'avatar_url' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN avatar_url VARCHAR")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column

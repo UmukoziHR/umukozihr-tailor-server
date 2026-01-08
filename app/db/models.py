@@ -37,6 +37,8 @@ class User(Base):
     monthly_generations_used = Column(Integer, default=0)
     monthly_generations_limit = Column(Integer, default=5)  # Free tier: 5/month
     usage_reset_at = Column(DateTime, nullable=True)  # When to reset monthly count
+    # Profile picture
+    avatar_url = Column(String, nullable=True)  # URL to profile picture
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Profile(Base):

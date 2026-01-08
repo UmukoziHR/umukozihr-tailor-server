@@ -225,6 +225,7 @@ class PublicProfileResponse(BaseModel):
     profile_views: int
     member_since: str
     is_available_for_hire: bool = True
+    avatar_url: Optional[str] = None
 
 
 class ShareSettingsRequest(BaseModel):

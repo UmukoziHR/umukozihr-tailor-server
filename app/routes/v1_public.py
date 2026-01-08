@@ -89,7 +89,8 @@ def get_public_profile(
             completeness=db_profile.completeness or 0.0,
             profile_views=user.profile_views or 0,
             member_since=user.created_at.strftime("%B %Y") if user.created_at else "2024",
-            is_available_for_hire=True  # Could be configurable later
+            is_available_for_hire=True,  # Could be configurable later
+            avatar_url=user.avatar_url
         )
 
     except HTTPException:

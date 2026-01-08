@@ -2,10 +2,14 @@ import logging
 import re
 import uuid
 import urllib.parse
-from fastapi import APIRouter, Depends, HTTPException, Request
+import os
+import io
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from sqlalchemy.orm import Session
 from datetime import datetime
-import os
+from PIL import Image
+import boto3
+from botocore.exceptions import NoCredentialsError
 
 from app.models import (
     Profile, ProfileV3, ProfileResponse, ProfileUpdateRequest,
@@ -515,3 +519,207 @@ def delete_profile(
         logger.error(f"=== DELETE PROFILE ERROR === User: {user_id}: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to delete profile")
+
+
+# ============================================
+# Avatar Upload (v1.5)
+# ============================================
+
+AVATAR_MAX_SIZE = 5 * 1024 * 1024  # 5MB
+AVATAR_ALLOWED_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+AVATAR_SIZE = (256, 256)  # Output size
+
+
+def upload_avatar_to_s3(image_bytes: bytes, user_id: str, content_type: str) -> str:
+    """
+    Upload avatar to S3 with public access.
+    Returns permanent public URL.
+    """
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION', 'us-east-1')
+        )
+        bucket = os.getenv('S3_BUCKET', 'umukozihr-artifacts')
+        region = os.getenv('AWS_REGION', 'us-east-1')
+        
+        # File extension from content type
+        ext_map = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif'}
+        ext = ext_map.get(content_type, 'jpg')
+        
+        s3_key = f"avatars/{user_id}.{ext}"
+        
+        # Upload with public-read ACL
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=image_bytes,
+            ContentType=content_type,
+            ACL='public-read',
+            CacheControl='max-age=31536000'  # 1 year cache
+        )
+        
+        # Return permanent public URL
+        url = f"https://{bucket}.s3.{region}.amazonaws.com/{s3_key}"
+        logger.info(f"Avatar uploaded to S3: {url}")
+        return url
+        
+    except NoCredentialsError:
+        logger.warning("S3 credentials not configured - using local fallback")
+        return None
+    except Exception as e:
+        logger.error(f"S3 avatar upload error: {e}")
+        return None
+
+
+@router.post("/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /api/v1/profile/avatar
+    Upload user profile picture
+    """
+    user_id = current_user["user_id"]
+    logger.info(f"=== AVATAR UPLOAD START === User: {user_id}")
+    
+    try:
+        # Validate content type
+        if file.content_type not in AVATAR_ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid file type. Allowed: JPEG, PNG, WebP, GIF"
+            )
+        
+        # Read file
+        contents = await file.read()
+        
+        # Validate size
+        if len(contents) > AVATAR_MAX_SIZE:
+            raise HTTPException(status_code=400, detail="File too large. Maximum 5MB.")
+        
+        # Process image with PIL - resize and optimize
+        try:
+            img = Image.open(io.BytesIO(contents))
+            
+            # Convert to RGB if necessary (for PNG with alpha)
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGB')
+            
+            # Resize to square, crop center if needed
+            width, height = img.size
+            min_dim = min(width, height)
+            left = (width - min_dim) // 2
+            top = (height - min_dim) // 2
+            img = img.crop((left, top, left + min_dim, top + min_dim))
+            img = img.resize(AVATAR_SIZE, Image.Resampling.LANCZOS)
+            
+            # Save to bytes
+            output = io.BytesIO()
+            img.save(output, format='JPEG', quality=85, optimize=True)
+            processed_bytes = output.getvalue()
+            
+        except Exception as e:
+            logger.error(f"Image processing error: {e}")
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        # Upload to S3
+        avatar_url = upload_avatar_to_s3(processed_bytes, user_id, 'image/jpeg')
+        
+        if not avatar_url:
+            # Fallback: store locally (not ideal for production)
+            raise HTTPException(
+                status_code=500, 
+                detail="Image storage not configured. Please contact support."
+            )
+        
+        # Update user record
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user.avatar_url = avatar_url
+        db.commit()
+        
+        logger.info(f"=== AVATAR UPLOAD SUCCESS === User: {user_id}, URL: {avatar_url}")
+        
+        return {
+            "success": True,
+            "avatar_url": avatar_url,
+            "message": "Profile picture uploaded successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"=== AVATAR UPLOAD ERROR === User: {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload profile picture")
+
+
+@router.delete("/avatar")
+def delete_avatar(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    DELETE /api/v1/profile/avatar
+    Remove user profile picture
+    """
+    user_id = current_user["user_id"]
+    logger.info(f"=== AVATAR DELETE === User: {user_id}")
+    
+    try:
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user.avatar_url = None
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Profile picture removed"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"=== AVATAR DELETE ERROR === User: {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove profile picture")
+
+
+@router.get("/avatar")
+def get_avatar(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    GET /api/v1/profile/avatar
+    Get current user's avatar URL
+    """
+    user_id = current_user["user_id"]
+    
+    try:
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "avatar_url": user.avatar_url
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get avatar error for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get avatar")
