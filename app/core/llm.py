@@ -23,7 +23,7 @@ SYSTEM = (
     "6) PROJECTS: Include ALL projects that showcase relevant skills. Projects are evidence of capability.\n"
     "7) CERTIFICATIONS: Include ALL certifications from profile VERBATIM. Copy name, issuer, date exactly.\n"
     "8) LANGUAGES: Copy ALL languages from profile with actual names (English, French, etc) and levels. Critical for international jobs.\n"
-    "9) SKILLS: Extract and highlight skills that directly match JD requirements. Be specific and technical.\n"
+    "9) SKILLS: Include ALL skills from the profile organized by category. Each skill category (e.g., 'Soft Skills', 'Tools and Technologies') contains keywords - include ALL keywords. Put JD-matching skills first, but DO NOT omit any skills.\n"
     "10) SUMMARY: Write a compelling, tailored summary that positions the candidate as THE solution to the employer's needs.\n"
     "\n\nCOVER LETTER STRATEGY:\n"
     "11) PERSONALIZATION: Reference the specific company name, role title, and location from the JD.\n"
@@ -134,11 +134,12 @@ def build_user_prompt(
         f"2. INCLUDE ALL RELEVANT EXPERIENCES - if 6 experiences are relevant, include all 6. Order by relevance to THIS job.\n"
         f"3. INCLUDE ALL PROJECTS that demonstrate relevant skills.\n"
         f"4. COPY ALL certifications and languages EXACTLY from profile - never use placeholders.\n"
-        f"5. COVER LETTER must reference: specific company name, role location, and show relocation readiness if applicable.\n"
-        f"6. Be as comprehensive and tailored as ChatGPT would be - don't filter aggressively.\n"
-        f"7. CRITICAL: Copy ALL dates EXACTLY from the profile - never change year values.\n"
-        f"8. CRITICAL: No em dashes, no placeholder text like 'Language' or 'Certification'.\n"
-        f"9. Return ONLY valid JSON matching the schema."
+        f"5. INCLUDE ALL SKILLS from profile by category - each category has keywords, include ALL of them. Prioritize JD-matching skills first.\n"
+        f"6. COVER LETTER must reference: specific company name, role location, and show relocation readiness if applicable.\n"
+        f"7. Be as comprehensive and tailored as ChatGPT would be - don't filter aggressively.\n"
+        f"8. CRITICAL: Copy ALL dates EXACTLY from the profile - never change year values.\n"
+        f"9. CRITICAL: No em dashes, no placeholder text like 'Language' or 'Certification'.\n"
+        f"10. Return ONLY valid JSON matching the schema."
     )
 
 def call_llm(prompt:str)->str:
