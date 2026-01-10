@@ -262,8 +262,8 @@ def setup_admin_user(db):
     import uuid
 
     ADMIN_EMAIL = "team@umukozihr.com"
-    # Secure password: UmukoziHR_Admin26!
-    ADMIN_PASSWORD = "UmukoziHR_Admin26!"
+    # Secure password: UmukoziHR_Admin2026!
+    ADMIN_PASSWORD = "UmukoziHR_Admin2026!"
 
     print("\n--- Setting up admin user ---")
 
