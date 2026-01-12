@@ -1,14 +1,8 @@
 import os, subprocess, zipfile, glob, datetime, logging
-import requests
-import json
 from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
 
 # Setup logging
 logger = logging.getLogger(__name__)
-
-# LaTeX-on-HTTP API endpoint (free cloud LaTeX compilation)
-LATEX_API_URL = "https://latex.ytotech.com/builds/sync"
-LATEX_API_TIMEOUT = 60  # seconds
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # server/app
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
@@ -59,7 +53,7 @@ def _latexmk(cwd:str, fname:str):
     return result
 
 def _docker_latexmk(cwd:str, fname:str):
-    """Compile LaTeX using Docker container"""
+    """Compile LaTeX using Docker container (for local dev on Windows)"""
     # Convert Windows path to Docker-compatible format
     docker_path = cwd.replace('\\', '/').replace('C:', '/c')
     result = subprocess.run([
@@ -71,79 +65,13 @@ def _docker_latexmk(cwd:str, fname:str):
     return result
 
 
-def _http_api_compile(tex_path: str) -> bool:
-    """
-    Compile LaTeX using latex.ytotech.com HTTP API.
-    This is the cloud fallback for environments without local LaTeX or Docker.
-    Works on Render, Heroku, Vercel, etc.
-    """
-    try:
-        # Read the TEX file content
-        with open(tex_path, 'r', encoding='utf-8') as f:
-            tex_content = f.read()
-        
-        # Prepare the API request
-        payload = {
-            "compiler": "pdflatex",
-            "resources": [
-                {
-                    "main": True,
-                    "content": tex_content
-                }
-            ]
-        }
-        
-        logger.info(f"Sending LaTeX to HTTP API for compilation...")
-        
-        # Make the API request
-        response = requests.post(
-            LATEX_API_URL,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(payload),
-            timeout=LATEX_API_TIMEOUT
-        )
-        
-        # Check if compilation succeeded (API returns PDF directly on success)
-        # Note: API returns 201 Created on success, not 200
-        content_type = response.headers.get('content-type', '').lower()
-        is_pdf_content = 'pdf' in content_type or response.content[:5] == b'%PDF-'
-        
-        if response.status_code in (200, 201) and is_pdf_content:
-            # Save the PDF
-            pdf_path = tex_path.replace('.tex', '.pdf')
-            with open(pdf_path, 'wb') as f:
-                f.write(response.content)
-            logger.info(f"PDF compiled successfully via HTTP API: {pdf_path}")
-            return True
-        else:
-            # API returned an error (usually JSON with error logs)
-            try:
-                error_data = response.json()
-                logger.warning(f"HTTP API compilation failed: {error_data.get('error', 'Unknown error')}")
-                if 'logs' in error_data:
-                    logger.debug(f"Compilation logs: {error_data['logs'][:500]}...")
-            except:
-                logger.warning(f"HTTP API returned status {response.status_code}: {response.text[:200]}")
-            return False
-            
-    except requests.exceptions.Timeout:
-        logger.warning(f"HTTP API compilation timed out after {LATEX_API_TIMEOUT}s")
-        return False
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"HTTP API request failed: {e}")
-        return False
-    except Exception as e:
-        logger.warning(f"HTTP API compilation error: {e}")
-        return False
-
 def compile_tex(tex_path:str) -> bool:
     """
-    Compile LaTeX to PDF. Returns True if successful, False otherwise.
+    Compile LaTeX to PDF using native TeX Live. Returns True if successful, False otherwise.
     
-    Compilation priority:
-    1. Local latexmk (fastest, for dev machines with TeX installed)
-    2. Docker latexmk (for machines with Docker but no TeX)
-    3. HTTP API latex.ytotech.com (for cloud deployments like Render)
+    Compilation methods:
+    1. Local latexmk (production on AWS with TeX Live installed)
+    2. Docker latexmk (local dev fallback on Windows)
     """
     cwd = os.path.dirname(tex_path)
     fname = os.path.basename(tex_path)
@@ -151,7 +79,7 @@ def compile_tex(tex_path:str) -> bool:
     
     logger.info(f"Starting LaTeX compilation for {fname}")
     
-    # Method 1: Try local latexmk first (fastest)
+    # Method 1: Try local latexmk (production - AWS has TeX Live installed)
     try:
         result = _latexmk(cwd, fname)
         if os.path.exists(pdf_path):
@@ -162,7 +90,7 @@ def compile_tex(tex_path:str) -> bool:
     except Exception as e1:
         logger.info(f"Local latexmk not available: {type(e1).__name__}")
         
-        # Method 2: Try Docker as second option
+        # Method 2: Try Docker as fallback (local dev on Windows)
         try:
             logger.info(f"Attempting Docker compilation for {fname}")
             result = _docker_latexmk(cwd, fname)
@@ -172,15 +100,10 @@ def compile_tex(tex_path:str) -> bool:
             else:
                 logger.warning(f"Docker latexmk completed but PDF not found: {pdf_path}")
         except Exception as e2:
-            logger.info(f"Docker not available: {type(e2).__name__}")
-            
-            # Method 3: Try HTTP API (cloud fallback - works on Render)
-            logger.info(f"Attempting HTTP API compilation for {fname}")
-            if _http_api_compile(tex_path):
-                return True
-            else:
-                logger.error(f"All compilation methods failed for {fname}")
-                logger.info(f"TEX source file available for manual compilation: {tex_path}")
+            logger.error(f"All compilation methods failed for {fname}")
+            logger.error(f"Local latexmk: {e1}")
+            logger.error(f"Docker: {e2}")
+            logger.info(f"TEX source file available for manual compilation: {tex_path}")
     
     return False
 

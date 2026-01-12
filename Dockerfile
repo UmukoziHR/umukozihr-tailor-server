@@ -1,18 +1,28 @@
 # ===================================
 # UmukoziHR Resume Tailor - Server
 # Production Docker build for FastAPI
-# Works with: Render, AWS App Runner, ECS
+# Full LaTeX support for PDF generation
+# Works with: AWS App Runner, ECS
 # ===================================
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + TeX Live for native PDF compilation
+# This makes the image ~2GB but enables fast, reliable PDF generation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
+    # TeX Live for native LaTeX compilation (no external API needed)
+    texlive-latex-base \
+    texlive-latex-recommended \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    texlive-xetex \
+    latexmk \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
