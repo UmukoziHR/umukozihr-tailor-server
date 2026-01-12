@@ -42,70 +42,34 @@ def render_tex(resume_ctx:dict, cl_ctx:dict, region:str, out_base:str):
     open(cover_letter_path,  "w", encoding="utf-8").write(tex_cover_letter)
     return resume_path, cover_letter_path
 
-def _latexmk(cwd:str, fname:str):
-    """Compile LaTeX using local latexmk"""
-    result = subprocess.run(
-        ["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error", fname],
-        cwd=cwd, capture_output=True, text=True, timeout=120
-    )
-    if result.returncode != 0:
-        raise Exception(f"latexmk failed with code {result.returncode}: {result.stderr}")
-    return result
-
-def _docker_latexmk(cwd:str, fname:str):
-    """Compile LaTeX using Docker container (for local dev on Windows)"""
-    # Convert Windows path to Docker-compatible format
-    docker_path = cwd.replace('\\', '/').replace('C:', '/c')
-    result = subprocess.run([
-        "docker","run","--rm","-v",f"{docker_path}:/data","blang/latex:ctanfull",
-        "latexmk","-pdf","-interaction=nonstopmode","-halt-on-error",fname
-    ], capture_output=True, text=True, timeout=240)
-    if result.returncode != 0:
-        raise Exception(f"Docker latexmk failed with code {result.returncode}: {result.stderr}")
-    return result
-
-
-def compile_tex(tex_path:str) -> bool:
+def compile_tex(tex_path: str) -> bool:
     """
-    Compile LaTeX to PDF using native TeX Live. Returns True if successful, False otherwise.
-    
-    Compilation methods:
-    1. Local latexmk (production on AWS with TeX Live installed)
-    2. Docker latexmk (local dev fallback on Windows)
+    Compile LaTeX to PDF using native TeX Live (latexmk).
+    TeX Live is installed in the Docker image - this is our standard compilation method.
     """
     cwd = os.path.dirname(tex_path)
     fname = os.path.basename(tex_path)
     pdf_path = tex_path.replace('.tex', '.pdf')
     
-    logger.info(f"Starting LaTeX compilation for {fname}")
+    logger.info(f"Compiling {fname} with latexmk...")
     
-    # Method 1: Try local latexmk (production - AWS has TeX Live installed)
-    try:
-        result = _latexmk(cwd, fname)
-        if os.path.exists(pdf_path):
-            logger.info(f"PDF compiled successfully with latexmk: {pdf_path}")
-            return True
-        else:
-            logger.warning(f"latexmk completed but PDF not found: {pdf_path}")
-    except Exception as e1:
-        logger.info(f"Local latexmk not available: {type(e1).__name__}")
-        
-        # Method 2: Try Docker as fallback (local dev on Windows)
-        try:
-            logger.info(f"Attempting Docker compilation for {fname}")
-            result = _docker_latexmk(cwd, fname)
-            if os.path.exists(pdf_path):
-                logger.info(f"PDF compiled successfully with Docker: {pdf_path}")
-                return True
-            else:
-                logger.warning(f"Docker latexmk completed but PDF not found: {pdf_path}")
-        except Exception as e2:
-            logger.error(f"All compilation methods failed for {fname}")
-            logger.error(f"Local latexmk: {e1}")
-            logger.error(f"Docker: {e2}")
-            logger.info(f"TEX source file available for manual compilation: {tex_path}")
+    result = subprocess.run(
+        ["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error", fname],
+        cwd=cwd, capture_output=True, text=True, timeout=120
+    )
     
-    return False
+    if result.returncode != 0:
+        logger.error(f"latexmk failed for {fname}")
+        logger.error(f"STDOUT: {result.stdout[-500:] if result.stdout else 'None'}")
+        logger.error(f"STDERR: {result.stderr[-500:] if result.stderr else 'None'}")
+        return False
+    
+    if os.path.exists(pdf_path):
+        logger.info(f"PDF compiled: {pdf_path}")
+        return True
+    else:
+        logger.error(f"latexmk completed but PDF not found: {pdf_path}")
+        return False
 
 def bundle(run_id:str):
     """Create ZIP bundle with PDFs prioritized - DEPRECATED, use bundle_pdfs_only"""
