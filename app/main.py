@@ -86,8 +86,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="UmukoziHR Resume Tailor API",
-    version="v1.3",
-    lifespan=lifespan
+    version="v2.0",
+    lifespan=lifespan,
+    redirect_slashes=False
 )
 
 # Add CORS middleware - get allowed origins from environment or use defaults
