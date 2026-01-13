@@ -318,7 +318,7 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-    db_url = os.getenv("DATABASE_URL", "sqlite:///./umukozihr.db")
+    db_url = os.getenv("DATABASE_URL")
     print(f"Database URL: {db_url}")
 
     if check_connection():

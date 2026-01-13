@@ -22,7 +22,7 @@ def flush_database():
     print("UmukoziHR Resume Tailor - Database Flush")
     print("=======================================")
     
-    db_url = os.getenv("DATABASE_URL", "sqlite:///./umukozihr.db")
+    db_url = os.getenv("DATABASE_URL")
     print(f"Database URL: {db_url}")
     
     db = SessionLocal()

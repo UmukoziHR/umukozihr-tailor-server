@@ -4,7 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Get database URL from environment variable or use default SQLite
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./umukozihr.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # For SQLite, we need to add check_same_thread=False for web applications
 if DATABASE_URL.startswith("sqlite"):
