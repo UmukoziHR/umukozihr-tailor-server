@@ -1,5 +1,6 @@
 import os, subprocess, zipfile, glob, datetime, logging, re
 from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
+from calendar import month_name
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -9,6 +10,42 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 # Use ARTIFACTS_DIR env var if set, otherwise fallback to local path
 ART_DIR = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "artifacts")))
 os.makedirs(ART_DIR, exist_ok=True)
+
+
+def format_date_human(date_str: str) -> str:
+    """
+    Convert YYYY-MM to human readable format like 'June 2025'.
+    Handles 'present', 'Present', empty strings, and already formatted dates.
+    """
+    if not date_str or not isinstance(date_str, str):
+        return date_str or ""
+    
+    date_str = date_str.strip()
+    
+    # Handle 'present' case
+    if date_str.lower() == 'present':
+        return 'Present'
+    
+    # Check if already in human format (contains letters)
+    if any(c.isalpha() for c in date_str):
+        return date_str
+    
+    # Try to parse YYYY-MM format
+    try:
+        if '-' in date_str:
+            parts = date_str.split('-')
+            if len(parts) >= 2:
+                year = parts[0]
+                month_num = int(parts[1])
+                if 1 <= month_num <= 12:
+                    return f"{month_name[month_num]} {year}"
+        # Just year
+        if date_str.isdigit() and len(date_str) == 4:
+            return date_str
+    except (ValueError, IndexError):
+        pass
+    
+    return date_str
 
 
 def latex_escape(text):
@@ -58,8 +95,9 @@ env = Environment(
     lstrip_blocks=True,
 )
 
-# Add latex_escape filter to Jinja2 environment
+# Add custom filters to Jinja2 environment
 env.filters['latex_escape'] = latex_escape
+env.filters['human_date'] = format_date_human
 
 REGION_RESUME_TEMPLATE: dict[str, str] = {
     "US": "resume_us.tex.j2",

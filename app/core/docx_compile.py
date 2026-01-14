@@ -8,6 +8,7 @@ after generation - a key feature request from user feedback.
 
 import os
 import logging
+from calendar import month_name
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -20,6 +21,42 @@ logger = logging.getLogger(__name__)
 # Use ARTIFACTS_DIR env var if set, otherwise fallback to local path
 ART_DIR = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "artifacts")))
 os.makedirs(ART_DIR, exist_ok=True)
+
+
+def format_date_human(date_str: str) -> str:
+    """
+    Convert YYYY-MM to human readable format like 'June 2025'.
+    Handles 'present', 'Present', empty strings, and already formatted dates.
+    """
+    if not date_str or not isinstance(date_str, str):
+        return date_str or ""
+    
+    date_str = date_str.strip()
+    
+    # Handle 'present' case
+    if date_str.lower() == 'present':
+        return 'Present'
+    
+    # Check if already in human format (contains letters)
+    if any(c.isalpha() for c in date_str):
+        return date_str
+    
+    # Try to parse YYYY-MM format
+    try:
+        if '-' in date_str:
+            parts = date_str.split('-')
+            if len(parts) >= 2:
+                year = parts[0]
+                month_num = int(parts[1])
+                if 1 <= month_num <= 12:
+                    return f"{month_name[month_num]} {year}"
+        # Just year
+        if date_str.isdigit() and len(date_str) == 4:
+            return date_str
+    except (ValueError, IndexError):
+        pass
+    
+    return date_str
 
 
 def set_document_margins(doc, margin_inches=0.75):
@@ -132,8 +169,8 @@ def create_resume_docx(profile: dict, resume_out: dict, job: dict, out_path: str
             
             # Dates
             dates_para = doc.add_paragraph()
-            start = exp.get('start', '')
-            end = exp.get('end', 'Present')
+            start = format_date_human(exp.get('start', ''))
+            end = format_date_human(exp.get('end', 'Present'))
             dates_para.add_run(f"{start} - {end}")
             dates_para.paragraph_format.space_after = Pt(4)
             
@@ -167,7 +204,7 @@ def create_resume_docx(profile: dict, resume_out: dict, job: dict, out_path: str
             edu_para.paragraph_format.space_after = Pt(4)
     
     # === SKILLS ===
-    skills = resume_out.get('skills', [])
+    skills = resume_out.get('skills_line', resume_out.get('skills', []))
     if skills:
         skills_header = doc.add_paragraph()
         skills_run = skills_header.add_run('SKILLS')
@@ -253,7 +290,7 @@ def create_resume_docx(profile: dict, resume_out: dict, job: dict, out_path: str
         lang_header.paragraph_format.space_after = Pt(4)
         
         lang_para = doc.add_paragraph()
-        lang_texts = [f"{l.get('language', 'Language')} ({l.get('proficiency', 'Proficient')})" for l in languages]
+        lang_texts = [f"{l.get('name', '')} ({l.get('level', 'Fluent')})" for l in languages if l.get('name')]
         lang_para.add_run(' • '.join(lang_texts))
     
     # Save the document

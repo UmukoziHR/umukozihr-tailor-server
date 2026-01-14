@@ -44,7 +44,7 @@
 \textbf{\large Professional Experience}\\[6pt]
 {% for r in out.experience %}
 \textbf{ {{- r.title -}} } --- {{ r.company }}\\
-\textit{ {{- r.start or "" -}} -- {{ r.end or "Present" -}} }
+\textit{ {{- (r.start or "")|human_date -}} -- {{ (r.end or "Present")|human_date -}} }
 {% if r.bullets and r.bullets|length > 0 %}
 \begin{itemize}
 {% for b in r.bullets %}\item {{ b }}
