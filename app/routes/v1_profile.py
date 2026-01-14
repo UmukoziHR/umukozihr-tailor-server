@@ -31,7 +31,7 @@ PROFILE_BASE_URL = "https://tailor.umukozihr.com/p"
 BRAND_EMAIL = "tailor@umukozihr.com"
 
 # Legacy endpoint (v1.2 - file-based storage)
-@router.post("/")
+@router.post("")
 def save_profile(profile: Profile):
     """Legacy endpoint for backward compatibility"""
     logger.info(f"Saving profile for: {profile.name}")
@@ -45,7 +45,7 @@ def save_profile(profile: Profile):
 
 # v1.3 endpoints (database-backed)
 
-@router.get("/", response_model=ProfileResponse)
+@router.get("", response_model=ProfileResponse)
 def get_profile(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -96,7 +96,7 @@ def get_profile(
         raise HTTPException(status_code=500, detail=f"Failed to get profile: {str(e)}")
 
 
-@router.put("/", response_model=ProfileUpdateResponse)
+@router.put("", response_model=ProfileUpdateResponse)
 def update_profile(
     request: ProfileUpdateRequest,
     http_request: Request,
@@ -463,7 +463,7 @@ def get_share_settings(
 # Delete Profile (v1.5)
 # ============================================
 
-@router.delete("/")
+@router.delete("")
 def delete_profile(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
