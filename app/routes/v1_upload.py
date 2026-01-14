@@ -1,7 +1,8 @@
 """
 Resume Upload API - POST /api/v1/profile/upload
+LinkedIn Scrape API - POST /api/v1/profile/linkedin
 
-Handles resume file uploads (PDF, DOCX, TXT) and extracts profile data using Gemini 2.0 Pro.
+Handles resume file uploads (PDF, DOCX, TXT) and LinkedIn URL scraping.
 """
 import logging
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -11,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.db.database import get_db
-# User model not needed - get_current_user returns dict
 from app.core.resume_parser import parse_resume
+from app.core.linkedin_scraper import scrape_linkedin_profile
 
 router = APIRouter(tags=["upload"])
 logger = logging.getLogger(__name__)
@@ -114,5 +115,57 @@ async def upload_resume(
         profile=result["profile"],
         extraction_confidence=result["extraction_confidence"],
         warnings=result.get("warnings", []),
+        message=result["message"]
+    )
+
+
+class LinkedInRequest(BaseModel):
+    linkedin_url: str
+
+
+@router.post("/profile/linkedin", response_model=UploadResponse)
+async def extract_from_linkedin(
+    request: LinkedInRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Extract profile data from a LinkedIn URL.
+    
+    - Requires authentication
+    - Accepts LinkedIn profile URL (e.g., linkedin.com/in/username)
+    - Returns extracted ProfileV3 structure
+    - User reviews and saves via PUT /api/v1/profile
+    
+    Cost: ~$0.004 per profile (via Apify HarvestAPI)
+    """
+    logger.info(f"LinkedIn extraction from user {current_user['user_id']}: {request.linkedin_url}")
+    
+    if not request.linkedin_url or len(request.linkedin_url.strip()) < 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide a valid LinkedIn URL"
+        )
+    
+    # Scrape LinkedIn profile
+    result = scrape_linkedin_profile(request.linkedin_url)
+    
+    if not result["success"]:
+        logger.warning(f"LinkedIn scrape failed: {result['message']}")
+        return UploadResponse(
+            success=False,
+            profile=None,
+            extraction_confidence=0.0,
+            warnings=[],
+            message=result["message"]
+        )
+    
+    logger.info(f"LinkedIn profile scraped successfully")
+    
+    return UploadResponse(
+        success=True,
+        profile=result["profile"],
+        extraction_confidence=result.get("extraction_confidence", 0.95),
+        warnings=["Email and phone need to be added manually (not available from LinkedIn)"],
         message=result["message"]
     )

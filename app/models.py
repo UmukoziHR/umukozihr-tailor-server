@@ -59,8 +59,45 @@ class Preferences(BaseModel):
     regions: List[Literal["US", "EU", "GL"]] = ["US"]
     templates: List[str] = ["minimal"]
 
+# LinkedIn-specific talent data (enriches UmukoziHR talent database)
+class Volunteering(BaseModel):
+    organization: str
+    role: str
+    cause: Optional[str] = ""
+    start: Optional[str] = ""
+    end: Optional[str] = ""
+    description: Optional[str] = ""
+
+class Publication(BaseModel):
+    title: str
+    publisher: Optional[str] = ""
+    date: Optional[str] = ""
+    url: Optional[str] = ""
+    description: Optional[str] = ""
+
+class Course(BaseModel):
+    name: str
+    number: Optional[str] = ""
+    associated_with: Optional[str] = ""  # School or org
+
+class LinkedInMeta(BaseModel):
+    """LinkedIn-specific metadata for talent intelligence"""
+    linkedin_url: Optional[str] = ""
+    linkedin_id: Optional[str] = ""
+    photo_url: Optional[str] = ""
+    open_to_work: Optional[bool] = False
+    hiring: Optional[bool] = False
+    premium: Optional[bool] = False
+    verified: Optional[bool] = False
+    influencer: Optional[bool] = False
+    connections_count: Optional[int] = 0
+    followers_count: Optional[int] = 0
+    registered_at: Optional[str] = ""
+    current_company: Optional[str] = ""
+    industry: Optional[str] = ""
+
 class ProfileV3(BaseModel):
-    """v1.3 comprehensive profile schema"""
+    """v2.0 comprehensive profile schema - UmukoziHR Talent Rich!"""
     basics: Basics = Basics()
     skills: List[Skill] = []
     experience: List[Experience] = []
@@ -69,6 +106,12 @@ class ProfileV3(BaseModel):
     certifications: List[Certification] = []
     awards: List[Award] = []
     languages: List[Language] = []
+    # LinkedIn-enriched sections
+    volunteering: List[Volunteering] = []
+    publications: List[Publication] = []
+    courses: List[Course] = []
+    linkedin_meta: Optional[LinkedInMeta] = None
+    # Standard fields
     preferences: Preferences = Preferences()
     version: Optional[int] = 1
     updated_at: Optional[str] = None

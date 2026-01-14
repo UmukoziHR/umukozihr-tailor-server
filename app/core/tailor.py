@@ -105,8 +105,23 @@ def run_tailor(profile: Profile, job: JobJD, full_profile_v3: ProfileV3 = None) 
         # Use full ProfileV3 if available, otherwise fall back to legacy Profile
         if full_profile_v3:
             full_profile_json = full_profile_v3.model_dump_json()
-            logger.info(f"Using FULL ProfileV3 with {len(full_profile_v3.certifications)} certifications, "
-                        f"{len(full_profile_v3.awards)} awards, {len(full_profile_v3.languages)} languages")
+            # Log all profile sections for debugging
+            volunteering_count = len(full_profile_v3.volunteering) if hasattr(full_profile_v3, 'volunteering') else 0
+            publications_count = len(full_profile_v3.publications) if hasattr(full_profile_v3, 'publications') else 0
+            courses_count = len(full_profile_v3.courses) if hasattr(full_profile_v3, 'courses') else 0
+            has_linkedin_meta = bool(full_profile_v3.linkedin_meta) if hasattr(full_profile_v3, 'linkedin_meta') else False
+            
+            logger.info(f"Using FULL ProfileV3: "
+                        f"{len(full_profile_v3.experience)} experiences, "
+                        f"{len(full_profile_v3.education)} education, "
+                        f"{len(full_profile_v3.skills)} skills, "
+                        f"{len(full_profile_v3.certifications)} certifications, "
+                        f"{len(full_profile_v3.awards)} awards, "
+                        f"{len(full_profile_v3.languages)} languages, "
+                        f"{volunteering_count} volunteering, "
+                        f"{publications_count} publications, "
+                        f"{courses_count} courses, "
+                        f"linkedin_meta: {has_linkedin_meta}")
         else:
             full_profile_json = profile.model_dump_json()
             logger.info("Using legacy Profile (no ProfileV3 available)")
