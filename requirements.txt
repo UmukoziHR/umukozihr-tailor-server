@@ -16,6 +16,9 @@ redis
 boto3
 passlib
 python-jose
+PyJWT
+cryptography
+svix
 email-validator
 requests
 beautifulsoup4
