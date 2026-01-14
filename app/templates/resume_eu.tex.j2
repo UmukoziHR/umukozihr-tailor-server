@@ -45,9 +45,11 @@
 {% for r in out.experience %}
 \textbf{ {{- r.title -}} } --- {{ r.company }}\\
 \textit{ {{- r.start or "" -}} -- {{ r.end or "Present" -}} }
+{% if r.bullets and r.bullets|length > 0 %}
 \begin{itemize}
 {% for b in r.bullets %}\item {{ b }}
 {% endfor %}\end{itemize}
+{% endif %}
 {% if not loop.last %}\vspace{6pt}{% endif %}
 {% endfor %}
 
@@ -58,9 +60,11 @@
 \textbf{\large Projects \& Portfolio}\\[6pt]
 {% for p in out.projects %}
 \textbf{ {{- p.name -}} } --- {{ p.stack|join(", ") }}
+{% if p.bullets and p.bullets|length > 0 %}
 \begin{itemize}
 {% for b in p.bullets %}\item {{ b }}
 {% endfor %}\end{itemize}
+{% endif %}
 {% if not loop.last %}\vspace{5pt}{% endif %}
 {% endfor %}
 {% endif %}
