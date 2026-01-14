@@ -39,7 +39,7 @@ def get_clerk_frontend_api():
                 padding = 4 - len(encoded) % 4
                 if padding != 4:
                     encoded += "=" * padding
-                decoded = base64.b64decode(encoded).decode('utf-8')
+                decoded = base64.b64decode(encoded).decode('utf-8').rstrip('$')
                 return f"https://{decoded}"
         except Exception as e:
             logger.warning(f"Could not decode Clerk publishable key: {e}")
