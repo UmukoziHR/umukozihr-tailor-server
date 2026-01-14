@@ -47,28 +47,57 @@ def compile_tex(tex_path: str) -> bool:
     Compile LaTeX to PDF using native TeX Live (latexmk).
     TeX Live is installed in the Docker image - this is our standard compilation method.
     """
+    import shutil
+    
     cwd = os.path.dirname(tex_path)
     fname = os.path.basename(tex_path)
     pdf_path = tex_path.replace('.tex', '.pdf')
     
-    logger.info(f"Compiling {fname} with latexmk...")
-    
-    result = subprocess.run(
-        ["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error", fname],
-        cwd=cwd, capture_output=True, text=True, timeout=120
-    )
-    
-    if result.returncode != 0:
-        logger.error(f"latexmk failed for {fname}")
-        logger.error(f"STDOUT: {result.stdout[-500:] if result.stdout else 'None'}")
-        logger.error(f"STDERR: {result.stderr[-500:] if result.stderr else 'None'}")
+    # Check if latexmk is available
+    latexmk_path = shutil.which('latexmk')
+    if not latexmk_path:
+        logger.error("latexmk not found in PATH! PDF compilation impossible.")
+        logger.error(f"Current PATH: {os.environ.get('PATH', 'NOT SET')}")
         return False
     
-    if os.path.exists(pdf_path):
-        logger.info(f"PDF compiled: {pdf_path}")
-        return True
-    else:
-        logger.error(f"latexmk completed but PDF not found: {pdf_path}")
+    logger.info(f"Compiling {fname} with latexmk at {latexmk_path}...")
+    logger.info(f"Working directory: {cwd}")
+    
+    try:
+        result = subprocess.run(
+            ["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error", fname],
+            cwd=cwd, capture_output=True, text=True, timeout=120
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"latexmk failed for {fname} (return code: {result.returncode})")
+            logger.error(f"STDOUT (last 1000 chars): {result.stdout[-1000:] if result.stdout else 'None'}")
+            logger.error(f"STDERR (last 1000 chars): {result.stderr[-1000:] if result.stderr else 'None'}")
+            
+            # Try to find and log the .log file for more details
+            log_file = tex_path.replace('.tex', '.log')
+            if os.path.exists(log_file):
+                with open(log_file, 'r') as f:
+                    log_content = f.read()
+                    # Find error lines
+                    error_lines = [l for l in log_content.split('\n') if '!' in l or 'Error' in l]
+                    if error_lines:
+                        logger.error(f"LaTeX errors: {error_lines[:10]}")
+            return False
+        
+        if os.path.exists(pdf_path):
+            logger.info(f"PDF compiled successfully: {pdf_path}")
+            return True
+        else:
+            logger.error(f"latexmk completed but PDF not found: {pdf_path}")
+            logger.error(f"Files in {cwd}: {os.listdir(cwd)}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logger.error(f"latexmk timed out after 120s for {fname}")
+        return False
+    except Exception as e:
+        logger.error(f"Exception during latexmk execution: {type(e).__name__}: {e}")
         return False
 
 def bundle(run_id:str):

@@ -10,6 +10,26 @@ echo "==================================="
 echo "UmukoziHR Tailor Server Starting..."
 echo "==================================="
 
+# Verify TeX Live / latexmk is installed
+echo "Checking PDF compilation tools..."
+if command -v latexmk > /dev/null 2>&1; then
+    echo "  latexmk: $(which latexmk)"
+    latexmk --version | head -1
+else
+    echo "  WARNING: latexmk not found! PDF compilation will fail."
+fi
+
+if command -v pdflatex > /dev/null 2>&1; then
+    echo "  pdflatex: $(which pdflatex)"
+else
+    echo "  WARNING: pdflatex not found!"
+fi
+
+# Ensure artifacts directory exists and is writable
+ARTIFACTS_DIR=${ARTIFACTS_DIR:-/tmp/artifacts}
+mkdir -p "$ARTIFACTS_DIR"
+echo "Artifacts directory: $ARTIFACTS_DIR"
+
 # Run database migrations
 echo "Running database migrations..."
 python migrate.py
