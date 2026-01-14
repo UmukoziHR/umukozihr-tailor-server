@@ -79,19 +79,26 @@ def scrape_linkedin_profile(url_or_username: str) -> Dict[str, Any]:
     logger.info(f"Scraping LinkedIn profile: {username}")
     
     try:
-        # Call Apify API
+        # Build the LinkedIn URL
+        linkedin_url = f"https://www.linkedin.com/in/{username}"
+        logger.info(f"Calling Apify with username: {username}")
+        
+        # Call Apify API - use publicIdentifiers for better results
         response = httpx.post(
             APIFY_API_URL,
             params={"token": APIFY_TOKEN},
             json={
-                "profileUrls": [f"https://www.linkedin.com/in/{username}"],
+                "publicIdentifiers": [username],  # Just the username, not full URL
                 "scrapeProfileDetails": True,
                 "scrapeEmail": False,  # Save money, we don't need email search
             },
-            timeout=60.0  # LinkedIn scraping can take a while
+            timeout=120.0  # LinkedIn scraping can take a while
         )
         
-        if response.status_code != 200:
+        logger.info(f"Apify response status: {response.status_code}")
+        logger.debug(f"Apify response body: {response.text[:1000]}")
+        
+        if response.status_code not in [200, 201]:
             logger.error(f"Apify API error: {response.status_code} - {response.text[:500]}")
             return {
                 "success": False,
@@ -100,6 +107,7 @@ def scrape_linkedin_profile(url_or_username: str) -> Dict[str, Any]:
             }
         
         data = response.json()
+        logger.info(f"Apify returned {len(data) if data else 0} profile(s) for {username}")
         
         if not data or len(data) == 0:
             logger.warning(f"No data returned for profile: {username}")
@@ -274,7 +282,8 @@ def map_linkedin_to_profile_v3(linkedin_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Experience-attached skills
     for exp in linkedin_data.get("experience", []):
-        for skill in exp.get("skills", []):
+        exp_skills = exp.get("skills") or []
+        for skill in exp_skills:
             if skill.lower() not in seen_skills:
                 skills.append({
                     "name": skill,
@@ -333,9 +342,13 @@ def map_linkedin_to_profile_v3(linkedin_data: Dict[str, Any]) -> Dict[str, Any]:
         if vol.get("startDate"):
             vol_start = str(vol.get("startDate", {}).get("year", ""))
         if vol.get("endDate"):
-            vol_end = str(vol.get("endDate", {}).get("year", ""))
+            end_text = vol.get("endDate", {}).get("text", "")
+            if "present" in end_text.lower():
+                vol_end = "present"
+            else:
+                vol_end = str(vol.get("endDate", {}).get("year", ""))
         volunteering.append({
-            "organization": vol.get("organization", "") or vol.get("companyName", ""),
+            "organization": vol.get("organizationName", "") or vol.get("organization", "") or vol.get("companyName", ""),
             "role": vol.get("role", "") or vol.get("title", ""),
             "cause": vol.get("cause", ""),
             "start": vol_start,
