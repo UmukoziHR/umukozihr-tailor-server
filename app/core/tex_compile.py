@@ -1,4 +1,4 @@
-import os, subprocess, zipfile, glob, datetime, logging
+import os, subprocess, zipfile, glob, datetime, logging, re
 from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
 
 # Setup logging
@@ -10,12 +10,56 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 ART_DIR = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "artifacts")))
 os.makedirs(ART_DIR, exist_ok=True)
 
+
+def latex_escape(text):
+    """
+    Escape special LaTeX characters in text.
+    Must escape: & % $ # _ { } ~ ^ \
+    """
+    if not isinstance(text, str):
+        return text
+    
+    # Order matters! Escape backslash first, then others
+    replacements = [
+        ('\\', r'\textbackslash{}'),
+        ('&', r'\&'),
+        ('%', r'\%'),
+        ('$', r'\$'),
+        ('#', r'\#'),
+        ('_', r'\_'),
+        ('{', r'\{'),
+        ('}', r'\}'),
+        ('~', r'\textasciitilde{}'),
+        ('^', r'\textasciicircum{}'),
+    ]
+    
+    for char, escaped in replacements:
+        text = text.replace(char, escaped)
+    
+    return text
+
+
+def latex_escape_dict(d):
+    """Recursively escape all string values in a dict/list structure."""
+    if isinstance(d, dict):
+        return {k: latex_escape_dict(v) for k, v in d.items()}
+    elif isinstance(d, list):
+        return [latex_escape_dict(item) for item in d]
+    elif isinstance(d, str):
+        return latex_escape(d)
+    else:
+        return d
+
+
 env = Environment(
     loader=FileSystemLoader(TEMPLATE_DIR),
     autoescape=select_autoescape(disabled_extensions=("tex",)),
     trim_blocks=True,
     lstrip_blocks=True,
 )
+
+# Add latex_escape filter to Jinja2 environment
+env.filters['latex_escape'] = latex_escape
 
 REGION_RESUME_TEMPLATE: dict[str, str] = {
     "US": "resume_us.tex.j2",
@@ -30,12 +74,16 @@ REGION_LETTER_TEMPLATE: dict[str, str] = {
 }
 
 def render_tex(resume_ctx:dict, cl_ctx:dict, region:str, out_base:str):
+    # Escape all LaTeX special characters in the context data
+    resume_ctx_escaped = latex_escape_dict(resume_ctx)
+    cl_ctx_escaped = latex_escape_dict(cl_ctx)
+    
     resume_template_name: str = REGION_RESUME_TEMPLATE.get(region, REGION_RESUME_TEMPLATE["GL"])
     cover_letter_template_name: str  = REGION_LETTER_TEMPLATE.get(region, REGION_LETTER_TEMPLATE["GL"])
     resume_template: Template = env.get_template(resume_template_name)
     cover_letter_template: Template  = env.get_template(cover_letter_template_name)
-    tex_resume: str = resume_template.render(**resume_ctx)
-    tex_cover_letter: str = cover_letter_template.render(**cl_ctx)
+    tex_resume: str = resume_template.render(**resume_ctx_escaped)
+    tex_cover_letter: str = cover_letter_template.render(**cl_ctx_escaped)
     resume_path: str = os.path.join(ART_DIR, f"{out_base}_resume.tex")
     cover_letter_path: str  = os.path.join(ART_DIR, f"{out_base}_cover.tex")
     open(resume_path, "w", encoding="utf-8").write(tex_resume)
