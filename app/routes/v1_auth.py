@@ -1,10 +1,12 @@
 import logging
 import httpx
 import os
+import jwt
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 from app.db.database import get_db
 from app.db.models import User
 from app.auth.auth import hash_password, verify_password, create_access_token
@@ -12,6 +14,9 @@ from app.utils.analytics import track_event, EventType
 from app.core.subscription import is_african_user
 
 logger = logging.getLogger(__name__)
+
+# Supabase JWT secret (from your Supabase project settings)
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -260,3 +265,137 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"=== LOGIN ERROR === Email: {req.email}, Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+
+# ============= OAuth Authentication (Supabase) =============
+
+class OAuthSyncRequest(BaseModel):
+    token: str
+    provider: str = "google"
+
+
+def verify_supabase_token(token: str) -> Optional[dict]:
+    """
+    Verify Supabase JWT token and extract user info.
+    For production, you should verify against Supabase's JWT secret.
+    """
+    try:
+        # Decode without verification first to get the payload
+        # In production with SUPABASE_JWT_SECRET set, we verify properly
+        if SUPABASE_JWT_SECRET:
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated"
+            )
+        else:
+            # Development: decode without verification (not recommended for production)
+            payload = jwt.decode(token, options={"verify_signature": False})
+        
+        return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("Supabase token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid Supabase token: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error verifying Supabase token: {e}")
+        return None
+
+
+@router.post("/oauth-sync")
+def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Sync OAuth user (from Supabase) with our database.
+    Creates user if not exists, or returns token for existing user.
+    """
+    logger.info(f"=== OAUTH SYNC START === Provider: {req.provider}")
+    
+    try:
+        # Verify Supabase token
+        payload = verify_supabase_token(req.token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired OAuth token"
+            )
+        
+        # Extract email from token
+        email = payload.get("email")
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email not found in OAuth token"
+            )
+        
+        logger.info(f"OAuth sync for email: {email}")
+        
+        # Check if user exists
+        user = db.query(User).filter(User.email == email).first()
+        
+        if user:
+            # User exists - update auth provider if needed and return token
+            logger.info(f"Existing user found: {user.id}")
+            if user.auth_provider != req.provider:
+                user.auth_provider = req.provider
+            user.is_verified = True  # OAuth users are verified
+            user.last_login_at = datetime.utcnow()
+            db.commit()
+        else:
+            # Create new user
+            logger.info(f"Creating new OAuth user: {email}")
+            
+            # Get location
+            client_ip = get_client_ip(request)
+            location = get_location_from_ip(client_ip)
+            country_code = location.get('country')
+            region_group = 'africa' if is_african_user(country_code) else 'global'
+            
+            user = User(
+                email=email,
+                password_hash=None,  # OAuth users don't have passwords
+                auth_provider=req.provider,
+                is_admin=False,
+                is_verified=True,
+                onboarding_completed=False,
+                onboarding_step=0,
+                country=country_code,
+                country_name=location.get('country_name'),
+                city=location.get('city'),
+                signup_ip=client_ip,
+                region_group=region_group
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            
+            # Track signup
+            track_event(
+                db=db,
+                event_type=EventType.SIGNUP,
+                user_id=str(user.id),
+                event_data={"email": email, "provider": req.provider},
+                request=request
+            )
+        
+        # Generate our backend token
+        access_token = create_access_token({"sub": str(user.id)})
+        
+        logger.info(f"=== OAUTH SYNC SUCCESS === User ID: {user.id}")
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": str(user.id),
+            "is_new_user": user.created_at and (datetime.utcnow() - user.created_at).seconds < 60
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"=== OAUTH SYNC ERROR === Error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OAuth sync failed: {str(e)}"
+        )
