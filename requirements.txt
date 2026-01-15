@@ -18,7 +18,6 @@ passlib
 python-jose
 PyJWT
 cryptography
-svix
 email-validator
 requests
 beautifulsoup4
