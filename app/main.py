@@ -2,6 +2,7 @@ import logging
 import asyncio
 import httpx
 import time
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -20,16 +21,22 @@ from app.routes.v1_jd import router as jd_router
 from app.routes.v1_subscription import router as subscription_router
 import os
 
-# Configure logging
+# Configure logging - DEBUG level for detailed diagnostics
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=getattr(logging, LOG_LEVEL, logging.DEBUG),
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
-        logging.FileHandler('umukozihr.log'),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
+
+# Set all loggers to DEBUG
+for logger_name in ['app', 'app.routes', 'app.core', 'app.auth', 'app.db', 'uvicorn', 'httpx']:
+    logging.getLogger(logger_name).setLevel(getattr(logging, LOG_LEVEL, logging.DEBUG))
+
 logger = logging.getLogger(__name__)
+logger.debug(f"Logging configured at {LOG_LEVEL} level")
 
 # Auto-ping configuration to prevent Render free tier from sleeping
 PING_INTERVAL = 240  # 4 minutes in seconds
@@ -113,9 +120,9 @@ async def log_requests(request: Request, call_next):
     start_time = time.time()
 
     # Log incoming request
-    logger.info(f"Incoming request: {request.method} {request.url.path}")
-    logger.info(f"Request headers: {dict(request.headers)}")
-    logger.info(f"Request client: {request.client.host if request.client else 'unknown'}")
+    logger.debug(f"Incoming request: {request.method} {request.url.path}")
+    logger.debug(f"Request headers: {dict(request.headers)}")
+    logger.debug(f"Request client: {request.client.host if request.client else 'unknown'}")
 
     # Process request
     try:
@@ -123,7 +130,8 @@ async def log_requests(request: Request, call_next):
         process_time = time.time() - start_time
 
         # Log response
-        logger.info(f"Response: {response.status_code} for {request.method} {request.url.path} (took {process_time:.3f}s)")
+        log_level = logging.WARNING if response.status_code >= 400 else logging.DEBUG
+        logger.log(log_level, f"Response: {response.status_code} for {request.method} {request.url.path} (took {process_time:.3f}s)")
 
         return response
     except Exception as e:
@@ -171,8 +179,8 @@ logger.info("API routes registered successfully (v1.4 with subscriptions)")
 
 @app.get("/health")
 def health_check():
-    logger.info("Health check requested")
-    return {"status": "healthy", "service": "umukozihrtailor-backend"}
+    logger.debug("Health check requested")
+    return {"status": "healthy", "service": "umukozihrtailor-backend", "log_level": LOG_LEVEL}
 
 ART = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "artifacts")))
 os.makedirs(ART, exist_ok=True)

@@ -290,17 +290,20 @@ def get_supabase_jwks() -> dict:
     if _jwks_cache["keys"] and _jwks_cache["fetched_at"]:
         cache_age = (datetime.utcnow() - _jwks_cache["fetched_at"]).seconds
         if cache_age < 3600:  # 1 hour
+            logger.debug(f"Using cached JWKS (age: {cache_age}s)")
             return _jwks_cache["keys"]
     
     try:
         jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
-        logger.info(f"Fetching JWKS from: {jwks_url}")
+        logger.debug(f"Fetching JWKS from: {jwks_url}")
         response = httpx.get(jwks_url, timeout=10.0)
         if response.status_code == 200:
             _jwks_cache["keys"] = response.json()
             _jwks_cache["fetched_at"] = datetime.utcnow()
-            logger.info(f"JWKS fetched successfully, keys count: {len(_jwks_cache['keys'].get('keys', []))}")
+            logger.debug(f"JWKS fetched successfully, keys count: {len(_jwks_cache['keys'].get('keys', []))}")
             return _jwks_cache["keys"]
+        else:
+            logger.error(f"JWKS fetch failed with status: {response.status_code}")
     except Exception as e:
         logger.error(f"Failed to fetch JWKS: {e}")
     
@@ -315,11 +318,13 @@ def get_public_key_from_jwks(token: str) -> Optional[str]:
         from jwt import PyJWKClient
         
         jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        logger.debug(f"Creating PyJWKClient for: {jwks_url}")
         jwks_client = PyJWKClient(jwks_url)
         signing_key = jwks_client.get_signing_key_from_jwt(token)
+        logger.debug(f"Got signing key with kid: {signing_key.key_id}")
         return signing_key.key
     except Exception as e:
-        logger.error(f"Failed to get public key from JWKS: {e}")
+        logger.error(f"Failed to get public key from JWKS: {e}", exc_info=True)
         return None
 
 
@@ -334,20 +339,21 @@ def verify_supabase_token(token: str) -> Optional[dict]:
             unverified_header = jwt.get_unverified_header(token)
             token_alg = unverified_header.get('alg', 'HS256')
             token_kid = unverified_header.get('kid')
-            logger.info(f"Token algorithm: {token_alg}, kid: {token_kid}")
+            logger.debug(f"Token algorithm: {token_alg}, kid: {token_kid}")
         except Exception as e:
             logger.warning(f"Could not read token header: {e}")
             token_alg = 'HS256'
         
         # ES256 tokens need public key from JWKS
         if token_alg in ['ES256', 'ES384', 'ES512', 'RS256', 'RS384', 'RS512']:
-            logger.info("Using asymmetric verification (JWKS)")
+            logger.debug("Using asymmetric verification (JWKS)")
             public_key = get_public_key_from_jwks(token)
             
             if not public_key:
                 logger.error("Could not get public key for asymmetric token")
                 return None
             
+            logger.debug(f"Decoding token with {token_alg} algorithm")
             payload = jwt.decode(
                 token,
                 public_key,
@@ -356,7 +362,7 @@ def verify_supabase_token(token: str) -> Optional[dict]:
             )
         elif SUPABASE_JWT_SECRET:
             # HS256 tokens use the JWT secret
-            logger.info("Using symmetric verification (JWT secret)")
+            logger.debug("Using symmetric verification (JWT secret)")
             try:
                 secret_key = base64.b64decode(SUPABASE_JWT_SECRET)
             except Exception:
@@ -373,7 +379,7 @@ def verify_supabase_token(token: str) -> Optional[dict]:
             logger.warning("No verification method available - decoding without verification")
             payload = jwt.decode(token, options={"verify_signature": False})
         
-        logger.info(f"Token verified successfully for email: {payload.get('email')}")
+        logger.debug(f"Token verified successfully for email: {payload.get('email')}")
         return payload
     except jwt.ExpiredSignatureError:
         logger.warning("Supabase token expired")
@@ -382,7 +388,7 @@ def verify_supabase_token(token: str) -> Optional[dict]:
         logger.warning(f"Invalid Supabase token: {e}")
         return None
     except Exception as e:
-        logger.error(f"Error verifying Supabase token: {e}")
+        logger.error(f"Error verifying Supabase token: {e}", exc_info=True)
         return None
 
 
@@ -392,33 +398,39 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
     Sync OAuth user (from Supabase) with our database.
     Creates user if not exists, or returns token for existing user.
     """
-    logger.info(f"=== OAUTH SYNC START === Provider: {req.provider}")
+    logger.debug(f"=== OAUTH SYNC START === Provider: {req.provider}")
+    logger.debug(f"Token length: {len(req.token)}, Token prefix: {req.token[:50]}...")
     
     try:
         # Verify Supabase token
+        logger.debug("Verifying Supabase token...")
         payload = verify_supabase_token(req.token)
         if not payload:
+            logger.error("Token verification failed - payload is None")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired OAuth token"
             )
         
+        logger.debug(f"Token payload: {payload}")
+        
         # Extract email from token
         email = payload.get("email")
         if not email:
+            logger.error(f"Email not found in token payload. Keys: {payload.keys()}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email not found in OAuth token"
             )
         
-        logger.info(f"OAuth sync for email: {email}")
+        logger.debug(f"OAuth sync for email: {email}")
         
         # Check if user exists
         user = db.query(User).filter(User.email == email).first()
         
         if user:
             # User exists - update auth provider if needed and return token
-            logger.info(f"Existing user found: {user.id}")
+            logger.debug(f"Existing user found: {user.id}")
             if user.auth_provider != req.provider:
                 user.auth_provider = req.provider
             user.is_verified = True  # OAuth users are verified
@@ -426,13 +438,14 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
             db.commit()
         else:
             # Create new user
-            logger.info(f"Creating new OAuth user: {email}")
+            logger.debug(f"Creating new OAuth user: {email}")
             
             # Get location
             client_ip = get_client_ip(request)
             location = get_location_from_ip(client_ip)
             country_code = location.get('country')
             region_group = 'africa' if is_african_user(country_code) else 'global'
+            logger.debug(f"New user location: {country_code}, region: {region_group}")
             
             user = User(
                 email=email,
@@ -451,6 +464,7 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
             db.add(user)
             db.commit()
             db.refresh(user)
+            logger.debug(f"New user created with ID: {user.id}")
             
             # Track signup
             track_event(
@@ -464,7 +478,7 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
         # Generate our backend token
         access_token = create_access_token({"sub": str(user.id)})
         
-        logger.info(f"=== OAUTH SYNC SUCCESS === User ID: {user.id}")
+        logger.info(f"=== OAUTH SYNC SUCCESS === User ID: {user.id}, Email: {email}")
         return {
             "access_token": access_token,
             "token_type": "bearer",
