@@ -15,6 +15,7 @@ celery
 redis
 boto3
 passlib
+bcrypt
 python-jose
 PyJWT
 cryptography
