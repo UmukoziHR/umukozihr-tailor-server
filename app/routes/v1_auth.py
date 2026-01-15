@@ -289,12 +289,21 @@ def verify_supabase_token(token: str) -> Optional[dict]:
                 # If base64 decode fails, use as-is (might be raw secret)
                 secret_key = SUPABASE_JWT_SECRET
             
-            logger.info(f"Verifying token with secret (length: {len(str(secret_key))})")
+            # First decode header to check algorithm
+            try:
+                unverified_header = jwt.get_unverified_header(token)
+                token_alg = unverified_header.get('alg', 'HS256')
+                logger.info(f"Token algorithm: {token_alg}")
+            except Exception as e:
+                logger.warning(f"Could not read token header: {e}")
+                token_alg = 'HS256'
+            
+            logger.info(f"Verifying token with secret (length: {len(str(secret_key))}), alg: {token_alg}")
             
             payload = jwt.decode(
                 token,
                 secret_key,
-                algorithms=["HS256"],
+                algorithms=[token_alg, "HS256", "HS384", "HS512"],
                 audience="authenticated"
             )
         else:
