@@ -2,6 +2,7 @@ import logging
 import httpx
 import os
 import jwt
+import base64
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
@@ -280,19 +281,28 @@ def verify_supabase_token(token: str) -> Optional[dict]:
     For production, you should verify against Supabase's JWT secret.
     """
     try:
-        # Decode without verification first to get the payload
-        # In production with SUPABASE_JWT_SECRET set, we verify properly
         if SUPABASE_JWT_SECRET:
+            # Supabase JWT secret is base64 encoded - decode it first
+            try:
+                secret_key = base64.b64decode(SUPABASE_JWT_SECRET)
+            except Exception:
+                # If base64 decode fails, use as-is (might be raw secret)
+                secret_key = SUPABASE_JWT_SECRET
+            
+            logger.info(f"Verifying token with secret (length: {len(str(secret_key))})")
+            
             payload = jwt.decode(
                 token,
-                SUPABASE_JWT_SECRET,
+                secret_key,
                 algorithms=["HS256"],
                 audience="authenticated"
             )
         else:
             # Development: decode without verification (not recommended for production)
+            logger.warning("SUPABASE_JWT_SECRET not set - skipping signature verification")
             payload = jwt.decode(token, options={"verify_signature": False})
         
+        logger.info(f"Token verified successfully for email: {payload.get('email')}")
         return payload
     except jwt.ExpiredSignatureError:
         logger.warning("Supabase token expired")
