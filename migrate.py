@@ -120,6 +120,10 @@ def migrate_v1_2_to_v1_3(db):
         # v1.5 Avatar column
         if 'avatar_url' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN avatar_url VARCHAR")
+        
+        # v1.6 OAuth auth_provider column
+        if 'auth_provider' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN auth_provider VARCHAR DEFAULT 'email'")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column
