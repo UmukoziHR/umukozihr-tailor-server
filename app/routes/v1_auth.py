@@ -16,8 +16,12 @@ from app.core.subscription import is_african_user
 
 logger = logging.getLogger(__name__)
 
-# Supabase JWT secret (from your Supabase project settings)
+# Supabase configuration
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://asikghbhiizuxkqbxzob.supabase.co")
+
+# Cache for JWKS public keys
+_jwks_cache = {"keys": None, "fetched_at": None}
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -275,40 +279,98 @@ class OAuthSyncRequest(BaseModel):
     provider: str = "google"
 
 
+def get_supabase_jwks() -> dict:
+    """
+    Fetch Supabase JWKS (JSON Web Key Set) for ES256 token verification.
+    Caches the result to avoid repeated HTTP calls.
+    """
+    global _jwks_cache
+    
+    # Return cached keys if fresh (cache for 1 hour)
+    if _jwks_cache["keys"] and _jwks_cache["fetched_at"]:
+        cache_age = (datetime.utcnow() - _jwks_cache["fetched_at"]).seconds
+        if cache_age < 3600:  # 1 hour
+            return _jwks_cache["keys"]
+    
+    try:
+        jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        logger.info(f"Fetching JWKS from: {jwks_url}")
+        response = httpx.get(jwks_url, timeout=10.0)
+        if response.status_code == 200:
+            _jwks_cache["keys"] = response.json()
+            _jwks_cache["fetched_at"] = datetime.utcnow()
+            logger.info(f"JWKS fetched successfully, keys count: {len(_jwks_cache['keys'].get('keys', []))}")
+            return _jwks_cache["keys"]
+    except Exception as e:
+        logger.error(f"Failed to fetch JWKS: {e}")
+    
+    return None
+
+
+def get_public_key_from_jwks(token: str) -> Optional[str]:
+    """
+    Get the appropriate public key from JWKS based on token's kid header.
+    """
+    try:
+        from jwt import PyJWKClient
+        
+        jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        jwks_client = PyJWKClient(jwks_url)
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        return signing_key.key
+    except Exception as e:
+        logger.error(f"Failed to get public key from JWKS: {e}")
+        return None
+
+
 def verify_supabase_token(token: str) -> Optional[dict]:
     """
     Verify Supabase JWT token and extract user info.
-    For production, you should verify against Supabase's JWT secret.
+    Supports both HS256 (symmetric) and ES256 (asymmetric) tokens.
     """
     try:
-        if SUPABASE_JWT_SECRET:
-            # Supabase JWT secret is base64 encoded - decode it first
+        # First decode header to check algorithm
+        try:
+            unverified_header = jwt.get_unverified_header(token)
+            token_alg = unverified_header.get('alg', 'HS256')
+            token_kid = unverified_header.get('kid')
+            logger.info(f"Token algorithm: {token_alg}, kid: {token_kid}")
+        except Exception as e:
+            logger.warning(f"Could not read token header: {e}")
+            token_alg = 'HS256'
+        
+        # ES256 tokens need public key from JWKS
+        if token_alg in ['ES256', 'ES384', 'ES512', 'RS256', 'RS384', 'RS512']:
+            logger.info("Using asymmetric verification (JWKS)")
+            public_key = get_public_key_from_jwks(token)
+            
+            if not public_key:
+                logger.error("Could not get public key for asymmetric token")
+                return None
+            
+            payload = jwt.decode(
+                token,
+                public_key,
+                algorithms=[token_alg],
+                audience="authenticated"
+            )
+        elif SUPABASE_JWT_SECRET:
+            # HS256 tokens use the JWT secret
+            logger.info("Using symmetric verification (JWT secret)")
             try:
                 secret_key = base64.b64decode(SUPABASE_JWT_SECRET)
             except Exception:
-                # If base64 decode fails, use as-is (might be raw secret)
                 secret_key = SUPABASE_JWT_SECRET
-            
-            # First decode header to check algorithm
-            try:
-                unverified_header = jwt.get_unverified_header(token)
-                token_alg = unverified_header.get('alg', 'HS256')
-                logger.info(f"Token algorithm: {token_alg}")
-            except Exception as e:
-                logger.warning(f"Could not read token header: {e}")
-                token_alg = 'HS256'
-            
-            logger.info(f"Verifying token with secret (length: {len(str(secret_key))}), alg: {token_alg}")
             
             payload = jwt.decode(
                 token,
                 secret_key,
-                algorithms=[token_alg, "HS256", "HS384", "HS512"],
+                algorithms=["HS256", "HS384", "HS512"],
                 audience="authenticated"
             )
         else:
-            # Development: decode without verification (not recommended for production)
-            logger.warning("SUPABASE_JWT_SECRET not set - skipping signature verification")
+            # Development: decode without verification
+            logger.warning("No verification method available - decoding without verification")
             payload = jwt.decode(token, options={"verify_signature": False})
         
         logger.info(f"Token verified successfully for email: {payload.get('email')}")
