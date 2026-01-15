@@ -23,10 +23,22 @@ logger = logging.getLogger(__name__)
 # Clerk configuration
 CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "")
 CLERK_PUBLISHABLE_KEY = os.getenv("CLERK_PUBLISHABLE_KEY", "")
+# Allow explicit override via env var (recommended for production)
+CLERK_FRONTEND_API_ENV = os.getenv("CLERK_FRONTEND_API", "")
 
 # Extract Clerk instance ID from publishable key (pk_test_xxx... or pk_live_xxx...)
 def get_clerk_frontend_api():
-    """Get Clerk frontend API URL from publishable key"""
+    """Get Clerk frontend API URL - prefers env var, falls back to decoding publishable key"""
+    # First, check for explicit env var (most reliable)
+    if CLERK_FRONTEND_API_ENV:
+        logger.info(f"Using CLERK_FRONTEND_API from env: {CLERK_FRONTEND_API_ENV}")
+        return CLERK_FRONTEND_API_ENV
+    
+    # Hardcoded fallback for umukozihr (prevents $-suffix bug)
+    if CLERK_PUBLISHABLE_KEY and "umukozihr" in CLERK_PUBLISHABLE_KEY.lower():
+        logger.info("Using hardcoded Clerk frontend API for umukozihr")
+        return "https://clerk.umukozihr.com"
+    
     if CLERK_PUBLISHABLE_KEY:
         # The publishable key contains base64 encoded frontend API
         import base64
@@ -40,6 +52,7 @@ def get_clerk_frontend_api():
                 if padding != 4:
                     encoded += "=" * padding
                 decoded = base64.b64decode(encoded).decode('utf-8').rstrip('$')
+                logger.info(f"Decoded Clerk frontend API: https://{decoded}")
                 return f"https://{decoded}"
         except Exception as e:
             logger.warning(f"Could not decode Clerk publishable key: {e}")
@@ -47,6 +60,7 @@ def get_clerk_frontend_api():
 
 CLERK_FRONTEND_API = get_clerk_frontend_api()
 CLERK_JWKS_URL = f"{CLERK_FRONTEND_API}/.well-known/jwks.json" if CLERK_FRONTEND_API else None
+logger.info(f"Clerk JWKS URL configured: {CLERK_JWKS_URL}")
 
 # Security scheme
 security = HTTPBearer()
