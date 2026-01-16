@@ -1,56 +1,99 @@
-% US Cover Letter - Concise & Direct
-% American format: 3-4 paragraphs, achievement-focused, one page
-\documentclass[11pt]{article}
-\usepackage[letterpaper, margin=1in]{geometry}
+% US Cover Letter - Modern Professional Design
+% Concise | Direct | Action-Oriented
+\documentclass[11pt,letterpaper]{letter}
+
+% === GEOMETRY ===
+\usepackage[left=1in, right=1in, top=0.75in, bottom=0.75in]{geometry}
+
+% === FONTS ===
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+
+% === ICONS ===
+\usepackage{fontawesome5}
+
+% === FORMATTING ===
 \usepackage{parskip}
-\usepackage{enumitem}
-\setlength{\parskip}{11pt}
-\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=18pt, parsep=2pt}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+% === COLORS ===
+\definecolor{headercolor}{RGB}{44, 62, 80}
+\definecolor{accentcolor}{RGB}{52, 73, 94}
+
+% === HYPERLINKS ===
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accentcolor,
+    urlcolor=accentcolor,
+    pdfborder={0 0 0}
+}
+
+% === SPACING ===
+\setlength{\parskip}{10pt}
+\setlength{\parindent}{0pt}
 \pagenumbering{gobble}
 
 \begin{document}
 
-% === DATE & ADDRESS ===
+% === SENDER HEADER ===
+\begin{flushleft}
+{\large\bfseries\color{headercolor} {{ profile.name }}}\\[3pt]
+{% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}
+{% if profile.contacts.phone %} \quad \faPhone\ {{ profile.contacts.phone }}{% endif %}
+{% if profile.contacts.location %} \quad \faMapMarker*\ {{ profile.contacts.location }}{% endif %}
+\end{flushleft}
+
+\vspace{4pt}
+{\color{headercolor}\rule{\linewidth}{0.4pt}}
+\vspace{8pt}
+
+% === DATE ===
 \today
 
 \vspace{8pt}
 
+% === RECIPIENT ===
+{{ job.company }}
+
+\vspace{8pt}
+
+% === SUBJECT ===
+\textbf{RE: {{ job.title }}}
+
+\vspace{8pt}
+
+% === GREETING ===
 {{ out.address }}
 
-\vspace{8pt}
-
-% === SALUTATION ===
-Dear Hiring Manager,
-
-% === OPENING - Hook with enthusiasm ===
+% === INTRODUCTION ===
 {{ out.intro }}
 
-% === WHY YOU - Your qualifications ===
+% === WHY YOU ===
 {{ out.why_you }}
 
-% === EVIDENCE - Key achievements (bullets for US style) ===
+% === EVIDENCE ===
 {% if out.evidence and out.evidence|length > 0 %}
-Key achievements that align with this role:
 \begin{itemize}
-{% for e in out.evidence %}\item {{ e }}
-{% endfor %}\end{itemize}
+\setlength{\itemsep}{3pt}
+{% for point in out.evidence %}
+\item {{ point }}
+{% endfor %}
+\end{itemize}
 {% endif %}
 
-% === WHY THEM - Company-specific interest ===
+% === WHY THEM ===
 {{ out.why_them }}
 
-% === CLOSING - Call to action ===
+% === CLOSING ===
 {{ out.close }}
 
-\vspace{8pt}
+\vspace{12pt}
 
-Sincerely,
-
-\vspace{20pt}
-
-{{ profile.name }}\\
-{{ profile.contacts.email }}{% if profile.contacts.phone %} \textbullet{} {{ profile.contacts.phone }}{% endif %}
+% === SIGNATURE ===
+Best regards,\\[20pt]
+{\bfseries {{ profile.name }}}
 
 \end{document}

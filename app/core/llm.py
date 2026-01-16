@@ -3,7 +3,7 @@ import json
 import logging
 from dotenv import load_dotenv
 from google import genai
-from google.genai.types import Tool, Schema, GenerateContentConfig
+from google.genai.types import Tool, Schema, GenerateContentConfig, ThinkingConfig
 
 # Load environment variables
 load_dotenv()
@@ -163,16 +163,20 @@ def call_llm(prompt:str)->str:
         client = genai.Client(api_key=api_key)
         logger.info(f"Gemini client created successfully")
 
-        # Increased from 10k to 32k to prevent output truncation
-        # Gemini 2.5 Pro supports up to 65,536 output tokens
-        logger.info(f"Configuring generation settings: model=gemini-2.5-pro, temp=0.2, max_tokens=32000")
+        # MAXED OUT: Using maximum output tokens for comprehensive resume generation
+        # Gemini 2.5 Pro supports up to 65,536 output tokens - using 64k to be safe
+        # Enable thinking mode for enhanced reasoning (budget: max 32768 tokens)
+        logger.info(f"Configuring generation settings: model=gemini-2.5-pro, temp=0.2, max_tokens=65536, thinking_budget=32768")
         cfg = GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=OUTPUT_JSON_SCHEMA,
             temperature=0.2,
             top_p=0.9,
             candidate_count=1,
-            max_output_tokens=32000,
+            max_output_tokens=65536,  # MAXED: Full 64k output capacity
+            thinking_config=ThinkingConfig(
+                thinking_budget=32768  # MAXED: Full reasoning capacity
+            ),
         )
 
         logger.info(f"Sending request to Gemini API...")

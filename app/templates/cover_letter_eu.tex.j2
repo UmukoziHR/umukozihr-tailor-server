@@ -1,71 +1,108 @@
-% EU Cover Letter - Formal & Comprehensive
-% European format: More formal tone, comprehensive qualifications
-\documentclass[11pt]{article}
-\usepackage[a4paper, margin=1in]{geometry}
+% EU Cover Letter - Modern Professional Design
+% Formal | Comprehensive | European Style
+\documentclass[11pt,a4paper]{letter}
+
+% === GEOMETRY ===
+\usepackage[left=1in, right=1in, top=0.9in, bottom=0.9in]{geometry}
+
+% === FONTS ===
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+
+% === ICONS ===
+\usepackage{fontawesome5}
+
+% === FORMATTING ===
 \usepackage{parskip}
-\usepackage{enumitem}
-\setlength{\parskip}{10pt}
-\setlist[itemize]{noitemsep, topsep=4pt, leftmargin=16pt, parsep=2pt}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+% === COLORS ===
+\definecolor{headercolor}{RGB}{44, 62, 80}
+\definecolor{accentcolor}{RGB}{52, 73, 94}
+\definecolor{subtletext}{RGB}{100, 100, 100}
+
+% === HYPERLINKS ===
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accentcolor,
+    urlcolor=accentcolor,
+    pdfborder={0 0 0}
+}
+
+% === SPACING ===
+\setlength{\parskip}{11pt}
+\setlength{\parindent}{0pt}
 \pagenumbering{gobble}
 
 \begin{document}
 
-% === SENDER INFO (formal EU style) ===
+% === SENDER HEADER ===
 \begin{flushleft}
-{{ profile.name }}\\
-{% if profile.contacts.location %}{{ profile.contacts.location }}\\{% endif %}
-{{ profile.contacts.email }}\\
-{% if profile.contacts.phone %}{{ profile.contacts.phone }}{% endif %}
+{\large\bfseries\color{headercolor} {{ profile.name }}}\\[5pt]
+{% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}\\
+{% if profile.contacts.phone %}\faPhone\ {{ profile.contacts.phone }}{% endif %}\\
+{% if profile.contacts.location %}\faMapMarker*\ {{ profile.contacts.location }}{% endif %}
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[3pt]
+{% for link in profile.contacts.links[:2] %}
+{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ {{ link }}{% if not loop.last %}\\{% endif %}
+{% endfor %}
+{% endif %}
 \end{flushleft}
 
-\vspace{6pt}
+\vspace{10pt}
+{\color{headercolor}\rule{\linewidth}{0.5pt}}
+\vspace{14pt}
 
 % === DATE ===
 \today
 
-\vspace{10pt}
+\vspace{14pt}
 
 % === RECIPIENT ===
+Hiring Manager\\
+{{ job.company }}{% if job.location %}\\
+{{ job.location }}{% endif %}
+
+\vspace{14pt}
+
+% === SUBJECT ===
+\textbf{Application for the position of {{ job.title }}}
+
+\vspace{14pt}
+
+% === GREETING ===
 {{ out.address }}
 
-\vspace{10pt}
-
-% === SUBJECT LINE ===
-\textbf{Re: Application for {{ job.title }} at {{ job.company }}}
-
-\vspace{8pt}
-
-% === SALUTATION ===
-Dear Sir or Madam,
-
-% === OPENING ===
+% === INTRODUCTION ===
 {{ out.intro }}
 
-% === QUALIFICATIONS ===
+% === WHY YOU ===
 {{ out.why_you }}
 
-% === EVIDENCE - Detailed achievements ===
+% === EVIDENCE ===
 {% if out.evidence and out.evidence|length > 0 %}
 I would like to highlight the following relevant achievements:
 \begin{itemize}
-{% for e in out.evidence %}\item {{ e }}
-{% endfor %}\end{itemize}
+\setlength{\itemsep}{5pt}
+{% for point in out.evidence %}
+\item {{ point }}
+{% endfor %}
+\end{itemize}
 {% endif %}
 
-% === MOTIVATION ===
+% === WHY THEM ===
 {{ out.why_them }}
 
 % === CLOSING ===
 {{ out.close }}
 
-\vspace{10pt}
+\vspace{18pt}
 
-Yours faithfully,
-
-\vspace{24pt}
-
-{{ profile.name }}
+% === SIGNATURE ===
+Yours sincerely,\\[28pt]
+{\bfseries {{ profile.name }}}
 
 \end{document}

@@ -201,7 +201,7 @@ def process_single_job(
     
     # DOCX generation (for user editing - key feature request)
     try:
-        resume_docx_path, cover_docx_path = render_docx(resume_ctx, cover_letter_ctx, base)
+        resume_docx_path, cover_docx_path = render_docx(resume_ctx, cover_letter_ctx, base, j.region)
         docx_success = True
     except Exception as e:
         logger.warning(f"DOCX generation failed: {e}")
@@ -283,6 +283,14 @@ def run_generation_for_job(db: Session, user_id: str, job: DBJob, profile_data: 
     resume_pdf_success = compile_tex(resume_tex_path)
     cover_letter_pdf_success = compile_tex(cover_letter_tex_path)
 
+    # DOCX generation (for user editing)
+    try:
+        resume_docx_path, cover_docx_path = render_docx(resume_ctx, cover_letter_ctx, base, job.region)
+    except Exception as e:
+        logger.warning(f"DOCX generation failed: {e}")
+        resume_docx_path = None
+        cover_docx_path = None
+
     # Build artifacts URLs
     artifacts_urls = {
         "resume_tex": f"/artifacts/{os.path.basename(resume_tex_path)}",
@@ -301,6 +309,13 @@ def run_generation_for_job(db: Session, user_id: str, job: DBJob, profile_data: 
 
     if cover_letter_pdf_success and os.path.exists(cover_letter_pdf_path):
         artifacts_urls["cover_letter_pdf"] = f"/artifacts/{os.path.basename(cover_letter_pdf_path)}"
+
+    # Add DOCX paths
+    if resume_docx_path and os.path.exists(resume_docx_path):
+        artifacts_urls["resume_docx"] = f"/artifacts/{os.path.basename(resume_docx_path)}"
+    
+    if cover_docx_path and os.path.exists(cover_docx_path):
+        artifacts_urls["cover_letter_docx"] = f"/artifacts/{os.path.basename(cover_docx_path)}"
 
     # Create Run record
     db_run = DBRun(

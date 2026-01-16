@@ -1,110 +1,146 @@
-% Global Resume - 1-2 Pages Flexible
-% International format: Professional, ATS-optimized, universally acceptable
-\documentclass[10pt]{article}
-\usepackage[a4paper, margin=0.6in]{geometry}
+% Global Resume - Modern ATS-Friendly Design
+% 1-2 Pages Flexible | Professional Typography | Clean Layout
+\documentclass[10pt,a4paper]{article}
+
+% === GEOMETRY - Optimized margins for readability ===
+\usepackage[left=0.6in, right=0.6in, top=0.5in, bottom=0.5in]{geometry}
+
+% === FONTS - Modern, clean, ATS-safe ===
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{lmodern}  % Latin Modern - clean, professional, universally available
+\renewcommand{\familydefault}{\sfdefault}  % Sans-serif for modern look
+
+% === ICONS - Professional contact icons ===
+\usepackage{fontawesome5}
+
+% === FORMATTING ===
 \usepackage{enumitem}
 \usepackage{parskip}
 \usepackage{titlesec}
+\usepackage{xcolor}
 \usepackage{hyperref}
-\hypersetup{hidelinks}
 
-% Balanced spacing - professional and readable
-\setlist[itemize]{noitemsep, topsep=1pt, leftmargin=12pt, parsep=0pt, partopsep=0pt}
-\setlength{\parskip}{2pt}
+% === COLORS - Subtle professional accent ===
+\definecolor{headercolor}{RGB}{44, 62, 80}  % Dark slate blue
+\definecolor{accentcolor}{RGB}{52, 73, 94}  % Slightly lighter
+\definecolor{subtletext}{RGB}{100, 100, 100}  % Gray for dates
+
+% === HYPERLINKS ===
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accentcolor,
+    urlcolor=accentcolor,
+    pdfborder={0 0 0}
+}
+
+% === LIST FORMATTING - Compact, professional bullets ===
+\setlist[itemize]{
+    noitemsep,
+    topsep=2pt,
+    leftmargin=14pt,
+    parsep=0pt,
+    partopsep=0pt,
+    label=\textbullet
+}
+
+% === SPACING ===
+\setlength{\parskip}{0pt}
 \setlength{\parindent}{0pt}
-\titlespacing*{\section}{0pt}{6pt}{3pt}
 \pagenumbering{gobble}
+
+% === SECTION HEADERS - Modern styling ===
+\titleformat{\section}
+    {\large\bfseries\color{headercolor}\scshape}
+    {}
+    {0pt}
+    {}
+    [\vspace{-4pt}\color{headercolor}\rule{\linewidth}{0.5pt}\vspace{2pt}]
+
+\titlespacing*{\section}{0pt}{10pt}{6pt}
 
 \begin{document}
 
 % === HEADER ===
-{\Large\bfseries {{ profile.name }}}\\[3pt]
-{{ profile.contacts.email }} \textbullet{} {{ profile.contacts.phone }} \textbullet{} {{ profile.contacts.location }}
-{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
-{{ profile.contacts.links|join(" \\textbullet{} ") }}
-{% endif %}
+\begin{center}
+    {\LARGE\bfseries\color{headercolor} {{ profile.name }}}\\[6pt]
+    {% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}
+    {% if profile.contacts.phone %} \quad \faPhone\ {{ profile.contacts.phone }}{% endif %}
+    {% if profile.contacts.location %} \quad \faMapMarker*\ {{ profile.contacts.location }}{% endif %}
+    {% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[3pt]
+    {% for link in profile.contacts.links[:3] %}
+    {% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% elif 'portfolio' in link|lower or 'website' in link|lower %}\faGlobe{% else %}\faLink{% endif %}\ {{ link }}{% if not loop.last %} \quad {% endif %}
+    {% endfor %}
+    {% endif %}
+\end{center}
 
-\vspace{4pt}\hrule\vspace{6pt}
+\vspace{2pt}
 
-% === PROFILE ===
-\textbf{Profile}\\[3pt]
+% === PROFESSIONAL SUMMARY ===
+\section*{Professional Summary}
 {{ out.summary }}
 
-\vspace{4pt}\hrule\vspace{6pt}
-
 % === CORE SKILLS ===
-\textbf{Core Skills}\\[3pt]
-{{ out.skills_line|join(", ") }}
-
-\vspace{4pt}\hrule\vspace{6pt}
+\section*{Core Skills}
+{{ out.skills_line|join(" \\textbullet{} ") }}
 
 % === EXPERIENCE ===
-\textbf{Experience}\\[4pt]
+\section*{Experience}
 {% for r in out.experience %}
-\textbf{ {{- r.title -}} } --- {{ r.company }} \hfill {{ (r.start or "")|human_date }} -- {{ (r.end or "Present")|human_date }}
+\textbf{ {{- r.title -}} } \hfill \textcolor{subtletext}{ {{- (r.start or "")|human_date }} -- {{ (r.end or "Present")|human_date -}} }\\
+\textit{ {{- r.company -}} }
 {% if r.bullets and r.bullets|length > 0 %}
 \begin{itemize}
 {% for b in r.bullets %}\item {{ b }}
 {% endfor %}\end{itemize}
 {% endif %}
-{% if not loop.last %}\vspace{4pt}{% endif %}
+{% if not loop.last %}\vspace{6pt}{% endif %}
 {% endfor %}
 
 {% if out.projects and out.projects|length > 0 %}
-\vspace{4pt}\hrule\vspace{6pt}
-
 % === PROJECTS ===
-\textbf{Projects}\\[4pt]
+\section*{Projects}
 {% for p in out.projects %}
-\textbf{ {{- p.name -}} } --- {{ p.stack|join(", ") }}
+\textbf{ {{- p.name -}} } | \textit{ {{- p.stack|join(", ") -}} }
 {% if p.bullets and p.bullets|length > 0 %}
 \begin{itemize}
 {% for b in p.bullets %}\item {{ b }}
 {% endfor %}\end{itemize}
 {% endif %}
-{% if not loop.last %}\vspace{3pt}{% endif %}
+{% if not loop.last %}\vspace{4pt}{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.education and out.education|length > 0 %}
-\vspace{4pt}\hrule\vspace{6pt}
-
 % === EDUCATION ===
-\textbf{Education}\\[4pt]
+\section*{Education}
 {% for e in out.education %}
-\textbf{ {{- e.school -}} } --- {{ e.degree }} \hfill {{ e.period }}{% if not loop.last %}\\[3pt]{% endif %}
+\textbf{ {{- e.degree -}} } \hfill \textcolor{subtletext}{ {{- e.period -}} }\\
+\textit{ {{- e.school -}} }{% if not loop.last %}\\[6pt]{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.certifications and out.certifications|length > 0 %}
-\vspace{4pt}\hrule\vspace{6pt}
-
 % === CERTIFICATIONS ===
-\textbf{Certifications}\\[3pt]
+\section*{Certifications}
 {% for c in out.certifications %}
-\textbullet{} {{ c.name }} -- {{ c.issuer }}{% if c.date %} ({{ c.date }}){% endif %}{% if not loop.last %}\\[2pt]{% endif %}
+\textbullet{} \textbf{ {{- c.name -}} } -- {{ c.issuer }}{% if c.date %} \textcolor{subtletext}{({{ c.date }})}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.awards and out.awards|length > 0 %}
-\vspace{4pt}\hrule\vspace{6pt}
-
 % === AWARDS ===
-\textbf{Awards}\\[3pt]
+\section*{Awards}
 {% for a in out.awards %}
-\textbullet{} {{ a.name }} -- {{ a.by }}{% if a.date %} ({{ a.date }}){% endif %}{% if not loop.last %}\\[2pt]{% endif %}
+\textbullet{} \textbf{ {{- a.name -}} } -- {{ a.by }}{% if a.date %} \textcolor{subtletext}{({{ a.date }})}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if out.languages and out.languages|length > 0 %}
-\vspace{4pt}\hrule\vspace{6pt}
-
 % === LANGUAGES ===
-\textbf{Languages}\\[3pt]
+\section*{Languages}
 {% for l in out.languages %}
-{{ l.name }}{% if l.level %} ({{ l.level }}){% endif %}{% if not loop.last %}, {% endif %}
+{{ l.name }}{% if l.level %} ({{ l.level }}){% endif %}{% if not loop.last %} \textbullet{} {% endif %}
 {% endfor %}
 {% endif %}
 
