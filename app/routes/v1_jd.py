@@ -37,13 +37,18 @@ GARBAGE_PATTERNS = [
     r'create\s*(an\s*)?account\s*to',
     r'join\s*to\s*view',
     r'authwall',
-    # Bot detection
+    # Bot detection / Cloudflare
     r'captcha',
     r'verify\s*you\s*are\s*(human|not\s*a\s*robot)',
     r'cloudflare',
+    r'just\s*a\s*moment',  # Cloudflare challenge page
+    r'checking\s*(your\s*)?browser',
+    r'enable\s*javascript\s*and\s*cookies',
+    r'ray\s*id',  # Cloudflare Ray ID
     r'security\s*check',
     r'bot\s*detection',
     r'unusual\s*traffic',
+    r'waiting\s*for\s*.*\s*to\s*respond',  # "Waiting for openai.com to respond"
     # Cookie/consent
     r'cookie\s*(policy|consent)',
     r'accept\s*(all\s*)?cookies',
@@ -641,6 +646,21 @@ def fetch_jd(request: JDFetchRequest):
     
     if result and result.get('success'):
         jd_text = result.get('jd_text', '')
+        title = result.get('title', '')
+        
+        # Check if title indicates a Cloudflare/error page
+        if title:
+            title_lower = title.lower()
+            garbage_title_patterns = ['just a moment', 'access denied', 'page not found', 
+                                       '404', '403', 'error', 'cloudflare', 'captcha',
+                                       'checking your browser', 'security check']
+            for pattern in garbage_title_patterns:
+                if pattern in title_lower:
+                    logger.warning(f"Garbage title detected: '{title}'")
+                    return JDFetchResponse(
+                        success=False,
+                        message="This page is protected by Cloudflare or requires authentication. Please copy the job description from the job posting and paste it manually."
+                    )
         
         # Validate that the content is actually a job description
         is_valid, error_msg = validate_jd_content(jd_text)
