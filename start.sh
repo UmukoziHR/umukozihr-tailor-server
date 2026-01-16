@@ -26,8 +26,9 @@ else
 fi
 
 # Ensure artifacts directory exists and is writable
-ARTIFACTS_DIR=${ARTIFACTS_DIR:-/tmp/artifacts}
+export ARTIFACTS_DIR=${ARTIFACTS_DIR:-/tmp/artifacts}
 mkdir -p "$ARTIFACTS_DIR"
+chmod 755 "$ARTIFACTS_DIR"
 echo "Artifacts directory: $ARTIFACTS_DIR"
 
 # Run database migrations

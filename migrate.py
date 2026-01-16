@@ -124,6 +124,11 @@ def migrate_v1_2_to_v1_3(db):
         # v1.6 OAuth auth_provider column
         if 'auth_provider' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN auth_provider VARCHAR DEFAULT 'email'")
+        
+        # v1.6 Make password_hash nullable for OAuth users
+        # This always runs to ensure constraint is dropped
+        if "postgresql" in str(engine.url):
+            migrations.append("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column
@@ -185,8 +190,9 @@ def migrate_v1_2_to_v1_3(db):
             except Exception as e:
                 # May fail if column already exists (race condition)
                 db.rollback()  # Rollback failed transaction
-                if "already exists" in str(e) or "duplicate" in str(e).lower():
-                    print(f"    (already exists, skipping)")
+                err_str = str(e).lower()
+                if "already exists" in err_str or "duplicate" in err_str or "does not exist" in err_str:
+                    print(f"    (already applied, skipping)")
                 else:
                     print(f"    [ERROR]: {e}")
         print("[OK] Migrations completed")

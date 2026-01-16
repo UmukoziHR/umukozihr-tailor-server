@@ -101,7 +101,7 @@ app = FastAPI(
 # Add CORS middleware - get allowed origins from environment or use defaults
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001"
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,https://tailor.umukozihr.com,https://www.tailor.umukozihr.com"
 ).split(",")
 
 app.add_middleware(
