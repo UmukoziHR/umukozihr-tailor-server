@@ -23,6 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-fonts-extra \
     texlive-xetex \
     latexmk \
+    # Latin Modern fonts (required for modern resume templates)
+    fonts-lmodern \
+    lmodern \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
