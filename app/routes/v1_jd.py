@@ -1,12 +1,17 @@
 """
 Job Description fetching endpoint
 Attempts to scrape JD from URL with smart handlers for popular job boards
-Supports: LinkedIn, Ashby, Greenhouse, Lever, and generic pages via Jina Reader
+Supports: LinkedIn, Ashby, Greenhouse, Lever, and generic pages via Cloudflare bypass
 """
 import logging
 import re
 import requests
 import time
+try:
+    import cloudscraper
+    CLOUDSCRAPER_AVAILABLE = True
+except ImportError:
+    CLOUDSCRAPER_AVAILABLE = False
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, HTTPException
 from app.models import JDFetchRequest, JDFetchResponse
@@ -580,6 +585,114 @@ def detect_region(location_text: str) -> str:
     return 'GL'  # Global/default
 
 
+def fetch_with_cloudscraper(url: str) -> dict:
+    """
+    Fetch URL using cloudscraper to bypass Cloudflare protection.
+    This is our primary method for protected pages.
+    """
+    if not CLOUDSCRAPER_AVAILABLE:
+        logger.warning("cloudscraper not available, skipping")
+        return None
+    
+    logger.info(f"Fetching with cloudscraper (Cloudflare bypass): {url}")
+    
+    try:
+        # Create a scraper instance that can solve Cloudflare challenges
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            },
+            delay=10  # Wait up to 10 seconds for challenge to complete
+        )
+        
+        # Fetch the page
+        response = scraper.get(url, timeout=30)
+        response.raise_for_status()
+        
+        html = response.text
+        
+        # Quick check if we still got a Cloudflare page
+        if 'just a moment' in html.lower() or 'checking your browser' in html.lower():
+            logger.warning("Cloudscraper couldn't bypass Cloudflare challenge")
+            return None
+        
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Remove unwanted elements
+        for elem in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript']):
+            elem.decompose()
+        
+        # Try to find the page title
+        title = None
+        title_elem = soup.find('title')
+        if title_elem:
+            title = title_elem.get_text(strip=True)
+        
+        # Better title from h1
+        h1 = soup.find('h1')
+        if h1:
+            h1_text = h1.get_text(strip=True)
+            if h1_text and len(h1_text) > 5 and len(h1_text) < 200:
+                title = h1_text
+        
+        # Try to extract company from URL or page
+        company = None
+        parsed = urlparse(url)
+        domain_parts = parsed.netloc.replace('www.', '').split('.')
+        if domain_parts:
+            # Use first part of domain as company name
+            company = domain_parts[0].replace('-', ' ').title()
+            if company.lower() in ['jobs', 'careers', 'boards']:
+                company = domain_parts[1].replace('-', ' ').title() if len(domain_parts) > 1 else None
+        
+        # Try to find main content area
+        main_content = None
+        content_selectors = [
+            'main', 'article', '[role="main"]', '.job-description', 
+            '.job-details', '.posting-description', '.content',
+            '#job-description', '#content', '.description'
+        ]
+        
+        for selector in content_selectors:
+            elem = soup.select_one(selector)
+            if elem:
+                text = elem.get_text(separator='\n', strip=True)
+                if len(text) > 200:  # Meaningful content
+                    main_content = text
+                    break
+        
+        # Fallback: get body text
+        if not main_content:
+            body = soup.find('body')
+            if body:
+                main_content = body.get_text(separator='\n', strip=True)
+        
+        if main_content and len(main_content) > 200:
+            # Clean up the text
+            lines = [line.strip() for line in main_content.split('\n') if line.strip()]
+            clean_text = '\n'.join(lines)
+            
+            return {
+                'success': True,
+                'title': title,
+                'company': company,
+                'jd_text': clean_text,
+                'region': detect_region(clean_text[:500])
+            }
+        
+        logger.warning(f"Cloudscraper: insufficient content extracted from {url}")
+        return None
+        
+    except cloudscraper.exceptions.CloudflareChallengeError as e:
+        logger.warning(f"Cloudflare challenge failed: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Cloudscraper error: {e}")
+        return None
+
+
 @router.post("/jd/fetch", response_model=JDFetchResponse)
 def fetch_jd(request: JDFetchRequest):
     """
@@ -634,9 +747,14 @@ def fetch_jd(request: JDFetchRequest):
     elif 'lever.co' in url:
         result = fetch_lever_job(url)
     
-    # If specific handler failed or not matched, try Jina Reader
+    # For unknown sites, try cloudscraper first (best for Cloudflare bypass)
     if not result:
-        logger.info("Specific handler not available, trying Jina Reader...")
+        logger.info("Trying cloudscraper (Cloudflare bypass)...")
+        result = fetch_with_cloudscraper(url)
+    
+    # If cloudscraper failed, try Jina Reader
+    if not result:
+        logger.info("Cloudscraper failed, trying Jina Reader...")
         result = fetch_via_jina_reader(url)
     
     # If Jina also failed, try basic requests as last resort

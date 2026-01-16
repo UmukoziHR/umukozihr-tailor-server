@@ -23,4 +23,5 @@ email-validator
 requests
 beautifulsoup4
 httpx
+cloudscraper
 Pillow
