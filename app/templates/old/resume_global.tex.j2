@@ -1,5 +1,5 @@
 % Global Resume - Modern ATS-Friendly Design
-% 1-2 Pages Flexible | Internationally acceptable sections | Clean single-column layout
+% 1-2 Pages Flexible | Professional Typography | Clean Layout
 \documentclass[10pt,a4paper]{article}
 
 % === GEOMETRY - Optimized margins for readability ===
@@ -33,7 +33,6 @@
     urlcolor=accentcolor,
     pdfborder={0 0 0}
 }
-\urlstyle{same}
 
 % === LIST FORMATTING - Compact, professional bullets ===
 \setlist[itemize]{
@@ -61,17 +60,16 @@
 \titlespacing*{\section}{0pt}{10pt}{6pt}
 
 \begin{document}
-\raggedright
 
 % === HEADER ===
 \begin{center}
     {\LARGE\bfseries\color{headercolor} {{ profile.name }}}\\[6pt]
-    {% if profile.contacts.email %}\faEnvelope\ \href{mailto:{{ profile.contacts.email }}}{\nolinkurl{ {{- profile.contacts.email -}} }}{% endif %}
+    {% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}
     {% if profile.contacts.phone %} \quad \faPhone\ {{ profile.contacts.phone }}{% endif %}
     {% if profile.contacts.location %} \quad \faMapMarker*\ {{ profile.contacts.location }}{% endif %}
     {% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[3pt]
     {% for link in profile.contacts.links[:3] %}
-    {% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% elif 'portfolio' in link|lower or 'website' in link|lower %}\faGlobe{% else %}\faLink{% endif %}\ \href{ {{- link -}} }{\nolinkurl{ {{- link -}} }}{% if not loop.last %} \quad {% endif %}
+    {% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% elif 'portfolio' in link|lower or 'website' in link|lower %}\faGlobe{% else %}\faLink{% endif %}\ {{ link }}{% if not loop.last %} \quad {% endif %}
     {% endfor %}
     {% endif %}
 \end{center}
@@ -82,12 +80,12 @@
 \section*{Professional Summary}
 {{ out.summary }}
 
-% === SKILLS ===
-\section*{Skills}
+% === CORE SKILLS ===
+\section*{Core Skills}
 {{ out.skills_line|join(" \\textbullet{} ") }}
 
-% === WORK EXPERIENCE ===
-\section*{Work Experience}
+% === EXPERIENCE ===
+\section*{Experience}
 {% for r in out.experience %}
 \textbf{ {{- r.title -}} } \hfill \textcolor{subtletext}{ {{- (r.start or "")|human_date }} -- {{ (r.end or "Present")|human_date -}} }\\
 \textit{ {{- r.company -}} }
@@ -103,7 +101,7 @@
 % === PROJECTS ===
 \section*{Projects}
 {% for p in out.projects %}
-\textbf{ {{- p.name -}} }{% if p.stack and p.stack|length > 0 %} | \textit{ {{- p.stack|join(", ") -}} }{% endif %}
+\textbf{ {{- p.name -}} } | \textit{ {{- p.stack|join(", ") -}} }
 {% if p.bullets and p.bullets|length > 0 %}
 \begin{itemize}
 {% for b in p.bullets %}\item {{ b }}
@@ -126,7 +124,7 @@
 % === CERTIFICATIONS ===
 \section*{Certifications}
 {% for c in out.certifications %}
-\textbullet{} \textbf{ {{- c.name -}} }{% if c.issuer %} -- {{ c.issuer }}{% endif %}{% if c.date %} \textcolor{subtletext}{({{ c.date }})}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
+\textbullet{} \textbf{ {{- c.name -}} } -- {{ c.issuer }}{% if c.date %} \textcolor{subtletext}{({{ c.date }})}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 
@@ -134,7 +132,7 @@
 % === AWARDS ===
 \section*{Awards}
 {% for a in out.awards %}
-\textbullet{} \textbf{ {{- a.name -}} }{% if a.by %} -- {{ a.by }}{% endif %}{% if a.date %} \textcolor{subtletext}{({{ a.date }})}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
+\textbullet{} \textbf{ {{- a.name -}} } -- {{ a.by }}{% if a.date %} \textcolor{subtletext}{({{ a.date }})}{% endif %}{% if not loop.last %}\\[2pt]{% endif %}
 {% endfor %}
 {% endif %}
 

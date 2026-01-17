@@ -1,9 +1,9 @@
-% Europe Cover Letter - Modern Professional Design
-% Formal | A4 | European / UK-friendly conventions
+% Global Cover Letter - Modern Professional Design
+% Professional | Balanced | International Style
 \documentclass[11pt,a4paper]{letter}
 
 % === GEOMETRY ===
-\usepackage[left=1in, right=1in, top=0.9in, bottom=0.9in]{geometry}
+\usepackage[left=1in, right=1in, top=0.8in, bottom=0.8in]{geometry}
 
 % === FONTS ===
 \usepackage[T1]{fontenc}
@@ -31,50 +31,47 @@
     urlcolor=accentcolor,
     pdfborder={0 0 0}
 }
-\urlstyle{same}
 
 % === SPACING ===
-\setlength{\parskip}{11pt}
+\setlength{\parskip}{10pt}
 \setlength{\parindent}{0pt}
 \pagenumbering{gobble}
 
 \begin{document}
-\raggedright
 
 % === SENDER HEADER ===
 \begin{flushleft}
-{\large\bfseries\color{headercolor} {{ profile.name }}}\\[5pt]
-{% if profile.contacts.email %}\faEnvelope\ \href{mailto:{{ profile.contacts.email }}}{\nolinkurl{ {{- profile.contacts.email -}} }}{% endif %}\\
-{% if profile.contacts.phone %}\faPhone\ {{ profile.contacts.phone }}{% endif %}\\
+{\large\bfseries\color{headercolor} {{ profile.name }}}\\[4pt]
+{% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}
+{% if profile.contacts.phone %} \quad \faPhone\ {{ profile.contacts.phone }}{% endif %}\\
 {% if profile.contacts.location %}\faMapMarker*\ {{ profile.contacts.location }}{% endif %}
-{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[3pt]
+{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
 {% for link in profile.contacts.links[:2] %}
-{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ \href{ {{- link -}} }{\nolinkurl{ {{- link -}} }}{% if not loop.last %}\\{% endif %}
+{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ {{ link }}{% if not loop.last %} \quad {% endif %}
 {% endfor %}
 {% endif %}
 \end{flushleft}
 
-\vspace{10pt}
+\vspace{8pt}
 {\color{headercolor}\rule{\linewidth}{0.5pt}}
-\vspace{14pt}
+\vspace{12pt}
 
 % === DATE ===
 \today
 
-\vspace{14pt}
+\vspace{12pt}
 
 % === RECIPIENT ===
-{% if job.hiring_manager %}{{ job.hiring_manager }}\\{% endif %}
 Hiring Manager\\
 {{ job.company }}{% if job.location %}\\
 {{ job.location }}{% endif %}
 
-\vspace{14pt}
+\vspace{12pt}
 
 % === SUBJECT ===
-\textbf{Application for the position of {{ job.title }}}
+\textbf{Re: Application for {{ job.title }}}
 
-\vspace{14pt}
+\vspace{12pt}
 
 % === GREETING ===
 {{ out.address }}
@@ -85,11 +82,11 @@ Hiring Manager\\
 % === WHY YOU ===
 {{ out.why_you }}
 
-% === EVIDENCE ===
+% === EVIDENCE - Key achievements ===
 {% if out.evidence and out.evidence|length > 0 %}
-I would like to highlight the following relevant achievements:
+Key achievements that demonstrate my qualifications:
 \begin{itemize}
-\setlength{\itemsep}{5pt}
+\setlength{\itemsep}{4pt}
 {% for point in out.evidence %}
 \item {{ point }}
 {% endfor %}
@@ -102,15 +99,10 @@ I would like to highlight the following relevant achievements:
 % === CLOSING ===
 {{ out.close }}
 
-\vspace{18pt}
+\vspace{16pt}
 
 % === SIGNATURE ===
-{%- set _greeting = (out.address|default('') )|lower -%}
-{%- if 'dear sir' in _greeting or 'dear madam' in _greeting or 'dear sir or madam' in _greeting or 'to whom' in _greeting or 'hiring manager' in _greeting -%}
-Yours faithfully,\\[28pt]
-{%- else -%}
-Yours sincerely,\\[28pt]
-{%- endif -%}
+Sincerely,\\[24pt]
 {\bfseries {{ profile.name }}}
 
 \end{document}

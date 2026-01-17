@@ -1,5 +1,5 @@
-% US / North America Cover Letter - Modern Professional Design
-% Concise | Direct | Block format
+% US Cover Letter - Modern Professional Design
+% Concise | Direct | Action-Oriented
 \documentclass[11pt,letterpaper]{letter}
 
 % === GEOMETRY ===
@@ -30,7 +30,6 @@
     urlcolor=accentcolor,
     pdfborder={0 0 0}
 }
-\urlstyle{same}
 
 % === SPACING ===
 \setlength{\parskip}{10pt}
@@ -38,19 +37,13 @@
 \pagenumbering{gobble}
 
 \begin{document}
-\raggedright
 
 % === SENDER HEADER ===
 \begin{flushleft}
 {\large\bfseries\color{headercolor} {{ profile.name }}}\\[3pt]
-{% if profile.contacts.email %}\faEnvelope\ \href{mailto:{{ profile.contacts.email }}}{\nolinkurl{ {{- profile.contacts.email -}} }}{% endif %}
+{% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}
 {% if profile.contacts.phone %} \quad \faPhone\ {{ profile.contacts.phone }}{% endif %}
 {% if profile.contacts.location %} \quad \faMapMarker*\ {{ profile.contacts.location }}{% endif %}
-{% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
-{% for link in profile.contacts.links[:2] %}
-{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ \href{ {{- link -}} }{\nolinkurl{ {{- link -}} }}{% if not loop.last %} \quad {% endif %}
-{% endfor %}
-{% endif %}
 \end{flushleft}
 
 \vspace{4pt}
@@ -62,15 +55,13 @@
 
 \vspace{8pt}
 
-% === RECIPIENT (optional full block) ===
-{% if job.hiring_manager %}{{ job.hiring_manager }}\\{% endif %}
-{{ job.company }}{% if job.location %}\\
-{{ job.location }}{% endif %}
+% === RECIPIENT ===
+{{ job.company }}
 
 \vspace{8pt}
 
 % === SUBJECT ===
-\textbf{Re: {{ job.title }}}
+\textbf{RE: {{ job.title }}}
 
 \vspace{8pt}
 
@@ -102,7 +93,7 @@
 \vspace{12pt}
 
 % === SIGNATURE ===
-Sincerely,\\[20pt]
+Best regards,\\[20pt]
 {\bfseries {{ profile.name }}}
 
 \end{document}

@@ -1,5 +1,5 @@
-% Europe Cover Letter - Modern Professional Design
-% Formal | A4 | European / UK-friendly conventions
+% EU Cover Letter - Modern Professional Design
+% Formal | Comprehensive | European Style
 \documentclass[11pt,a4paper]{letter}
 
 % === GEOMETRY ===
@@ -31,7 +31,6 @@
     urlcolor=accentcolor,
     pdfborder={0 0 0}
 }
-\urlstyle{same}
 
 % === SPACING ===
 \setlength{\parskip}{11pt}
@@ -39,17 +38,16 @@
 \pagenumbering{gobble}
 
 \begin{document}
-\raggedright
 
 % === SENDER HEADER ===
 \begin{flushleft}
 {\large\bfseries\color{headercolor} {{ profile.name }}}\\[5pt]
-{% if profile.contacts.email %}\faEnvelope\ \href{mailto:{{ profile.contacts.email }}}{\nolinkurl{ {{- profile.contacts.email -}} }}{% endif %}\\
+{% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}\\
 {% if profile.contacts.phone %}\faPhone\ {{ profile.contacts.phone }}{% endif %}\\
 {% if profile.contacts.location %}\faMapMarker*\ {{ profile.contacts.location }}{% endif %}
 {% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[3pt]
 {% for link in profile.contacts.links[:2] %}
-{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ \href{ {{- link -}} }{\nolinkurl{ {{- link -}} }}{% if not loop.last %}\\{% endif %}
+{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ {{ link }}{% if not loop.last %}\\{% endif %}
 {% endfor %}
 {% endif %}
 \end{flushleft}
@@ -64,7 +62,6 @@
 \vspace{14pt}
 
 % === RECIPIENT ===
-{% if job.hiring_manager %}{{ job.hiring_manager }}\\{% endif %}
 Hiring Manager\\
 {{ job.company }}{% if job.location %}\\
 {{ job.location }}{% endif %}
@@ -105,12 +102,7 @@ I would like to highlight the following relevant achievements:
 \vspace{18pt}
 
 % === SIGNATURE ===
-{%- set _greeting = (out.address|default('') )|lower -%}
-{%- if 'dear sir' in _greeting or 'dear madam' in _greeting or 'dear sir or madam' in _greeting or 'to whom' in _greeting or 'hiring manager' in _greeting -%}
-Yours faithfully,\\[28pt]
-{%- else -%}
 Yours sincerely,\\[28pt]
-{%- endif -%}
 {\bfseries {{ profile.name }}}
 
 \end{document}

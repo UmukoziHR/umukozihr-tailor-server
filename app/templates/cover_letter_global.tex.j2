@@ -1,5 +1,5 @@
 % Global Cover Letter - Modern Professional Design
-% Professional | Balanced | International Style
+% Professional | Balanced | International style (A4)
 \documentclass[11pt,a4paper]{letter}
 
 % === GEOMETRY ===
@@ -31,6 +31,7 @@
     urlcolor=accentcolor,
     pdfborder={0 0 0}
 }
+\urlstyle{same}
 
 % === SPACING ===
 \setlength{\parskip}{10pt}
@@ -38,16 +39,17 @@
 \pagenumbering{gobble}
 
 \begin{document}
+\raggedright
 
 % === SENDER HEADER ===
 \begin{flushleft}
 {\large\bfseries\color{headercolor} {{ profile.name }}}\\[4pt]
-{% if profile.contacts.email %}\faEnvelope\ {{ profile.contacts.email }}{% endif %}
+{% if profile.contacts.email %}\faEnvelope\ \href{mailto:{{ profile.contacts.email }}}{\nolinkurl{ {{- profile.contacts.email -}} }}{% endif %}
 {% if profile.contacts.phone %} \quad \faPhone\ {{ profile.contacts.phone }}{% endif %}\\
 {% if profile.contacts.location %}\faMapMarker*\ {{ profile.contacts.location }}{% endif %}
 {% if profile.contacts.links and profile.contacts.links|length > 0 %}\\[2pt]
 {% for link in profile.contacts.links[:2] %}
-{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ {{ link }}{% if not loop.last %} \quad {% endif %}
+{% if 'linkedin' in link|lower %}\faLinkedin{% elif 'github' in link|lower %}\faGithub{% else %}\faLink{% endif %}\ \href{ {{- link -}} }{\nolinkurl{ {{- link -}} }}{% if not loop.last %} \quad {% endif %}
 {% endfor %}
 {% endif %}
 \end{flushleft}
@@ -62,6 +64,7 @@
 \vspace{12pt}
 
 % === RECIPIENT ===
+{% if job.hiring_manager %}{{ job.hiring_manager }}\\{% endif %}
 Hiring Manager\\
 {{ job.company }}{% if job.location %}\\
 {{ job.location }}{% endif %}
