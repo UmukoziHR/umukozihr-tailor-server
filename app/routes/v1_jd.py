@@ -915,12 +915,31 @@ def fetch_jd(request: JDFetchRequest):
                 message=error_msg
             )
         
-        logger.info(f"Successfully extracted JD: title={result.get('title')}, company={result.get('company')}, length={len(jd_text)}")
+        # Fallback: If title is empty, try to extract from first line of body
+        final_title = result.get('title')
+        if not final_title and jd_text:
+            lines = [l.strip() for l in jd_text.split('\n') if l.strip()]
+            for line in lines[:5]:  # Check first 5 lines
+                # Skip lines that look like metadata or navigation
+                if line.startswith(('http', '#', '!', '[', 'Position:', 'Company:', 'Location:')):
+                    continue
+                # Skip very short or very long lines
+                if len(line) < 10 or len(line) > 120:
+                    continue
+                # Skip lines with too many special chars (navigation, etc)
+                if sum(1 for c in line if c in '|>/<>[]{}()') > 3:
+                    continue
+                # This looks like a title
+                final_title = line
+                logger.info(f"Extracted title from body: '{final_title}'")
+                break
+        
+        logger.info(f"Successfully extracted JD: title={final_title}, company={result.get('company')}, length={len(jd_text)}")
         return JDFetchResponse(
             success=True,
             jd_text=jd_text,
             company=result.get('company'),
-            title=result.get('title'),
+            title=final_title,
             region=result.get('region'),
             message="Job description extracted successfully"
         )
