@@ -12,6 +12,13 @@ try:
     CLOUDSCRAPER_AVAILABLE = True
 except ImportError:
     CLOUDSCRAPER_AVAILABLE = False
+
+try:
+    from curl_cffi import requests as curl_requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    CURL_CFFI_AVAILABLE = False
+
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, HTTPException
 from app.models import JDFetchRequest, JDFetchResponse
@@ -693,6 +700,119 @@ def fetch_with_cloudscraper(url: str) -> dict:
         return None
 
 
+def fetch_with_curl_cffi(url: str) -> dict:
+    """
+    Fetch URL using curl_cffi - impersonates browser TLS fingerprints.
+    More effective than cloudscraper for some sites with aggressive protection.
+    """
+    if not CURL_CFFI_AVAILABLE:
+        logger.warning("curl_cffi not available, skipping")
+        return None
+    
+    logger.info(f"Fetching with curl_cffi (TLS fingerprint impersonation): {url}")
+    
+    # Try different browser impersonations
+    browsers = ["chrome", "chrome110", "safari", "safari_ios"]
+    
+    for browser in browsers:
+        try:
+            logger.info(f"Trying curl_cffi with {browser} impersonation...")
+            
+            response = curl_requests.get(
+                url,
+                impersonate=browser,
+                timeout=30,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                }
+            )
+            
+            # Check for blocks
+            if response.status_code == 403:
+                logger.warning(f"Got 403 with {browser}, trying next...")
+                continue
+            
+            if response.status_code == 503:
+                logger.warning(f"Got 503 with {browser}, trying next...")
+                continue
+            
+            response.raise_for_status()
+            html = response.text
+            
+            # Check for Cloudflare challenge
+            html_lower = html.lower()
+            if 'just a moment' in html_lower or 'checking your browser' in html_lower:
+                logger.warning(f"Cloudflare challenge detected with {browser}, trying next...")
+                continue
+            
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Remove unwanted elements
+            for elem in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript']):
+                elem.decompose()
+            
+            # Extract title
+            title = None
+            h1 = soup.find('h1')
+            if h1:
+                h1_text = h1.get_text(strip=True)
+                if h1_text and len(h1_text) > 5 and len(h1_text) < 200:
+                    title = h1_text
+            
+            # Extract company from URL
+            company = None
+            parsed = urlparse(url)
+            domain_parts = parsed.netloc.replace('www.', '').split('.')
+            if domain_parts:
+                company = domain_parts[0].replace('-', ' ').title()
+                if company.lower() in ['jobs', 'careers', 'boards']:
+                    company = domain_parts[1].replace('-', ' ').title() if len(domain_parts) > 1 else None
+            
+            # Get main content
+            main_content = None
+            content_selectors = [
+                'main', 'article', '[role="main"]', '.job-description',
+                '.job-details', '.posting-description', '.content',
+                '#job-description', '#content', '.description'
+            ]
+            
+            for selector in content_selectors:
+                elem = soup.select_one(selector)
+                if elem:
+                    text = elem.get_text(separator='\n', strip=True)
+                    if len(text) > 200:
+                        main_content = text
+                        break
+            
+            if not main_content:
+                body = soup.find('body')
+                if body:
+                    main_content = body.get_text(separator='\n', strip=True)
+            
+            if main_content and len(main_content) > 200:
+                lines = [line.strip() for line in main_content.split('\n') if line.strip()]
+                clean_text = '\n'.join(lines)
+                
+                logger.info(f"Successfully fetched with curl_cffi ({browser})")
+                return {
+                    'success': True,
+                    'title': title,
+                    'company': company,
+                    'jd_text': clean_text,
+                    'region': detect_region(clean_text[:500])
+                }
+            
+            logger.warning(f"Insufficient content with {browser}, trying next...")
+            
+        except Exception as e:
+            logger.warning(f"curl_cffi error with {browser}: {e}")
+            continue
+    
+    logger.warning(f"All curl_cffi attempts failed for {url}")
+    return None
+
+
 @router.post("/jd/fetch", response_model=JDFetchResponse)
 def fetch_jd(request: JDFetchRequest):
     """
@@ -752,9 +872,14 @@ def fetch_jd(request: JDFetchRequest):
         logger.info("Trying cloudscraper (Cloudflare bypass)...")
         result = fetch_with_cloudscraper(url)
     
-    # If cloudscraper failed, try Jina Reader
+    # If cloudscraper failed, try curl_cffi (TLS fingerprint impersonation)
     if not result:
-        logger.info("Cloudscraper failed, trying Jina Reader...")
+        logger.info("Cloudscraper failed, trying curl_cffi (TLS impersonation)...")
+        result = fetch_with_curl_cffi(url)
+    
+    # If curl_cffi failed, try Jina Reader (JS rendering engine)
+    if not result:
+        logger.info("curl_cffi failed, trying Jina Reader (JS engine)...")
         result = fetch_via_jina_reader(url)
     
     # If Jina also failed, try basic requests as last resort
