@@ -1,8 +1,17 @@
 """
 Paystack Payment Integration
-v1.4 - Handles subscriptions via Paystack API
+v1.5 - Fixed USD Pricing (Both African and International users pay in USD)
 
 Paystack API Docs: https://paystack.com/docs/api
+
+Key insight:
+- Ghana Paystack account settles in GHS
+- BUT we charge BOTH groups in USD for consistency
+- African users: $5/month (500 cents)
+- International users: $20/month (2000 cents)
+- Everyone sees USD on checkout, Paystack settles in GHS
+
+REQUIREMENT: International Payments must be enabled in Paystack Dashboard
 """
 import httpx
 import logging
@@ -12,11 +21,12 @@ from datetime import datetime, timedelta
 from app.core.subscription import (
     PAYSTACK_SECRET_KEY,
     PAYSTACK_BASE_URL,
-    PAYSTACK_PLAN_AFRICA_MONTHLY,
-    PAYSTACK_PLAN_GLOBAL_MONTHLY,
-    get_paystack_plan_code,
+    get_payment_config,
     get_user_price,
-    is_african_user
+    is_african_user,
+    PaymentConfig,
+    USD_PRICE_AFRICA,
+    USD_PRICE_GLOBAL
 )
 
 logger = logging.getLogger(__name__)
@@ -32,17 +42,21 @@ def get_headers() -> Dict[str, str]:
 
 async def initialize_transaction(
     email: str,
-    amount_usd: float,
+    country_code: Optional[str],
     user_id: str,
-    plan_code: Optional[str] = None,
     callback_url: Optional[str] = None,
     metadata: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
-    Initialize a Paystack transaction
+    Initialize a Paystack transaction with fixed USD pricing.
     
-    For one-time payments: Just pass amount
-    For subscriptions: Pass plan_code
+    - African users: $5/month (500 cents)
+    - International users: $20/month (2000 cents)
+    
+    BOTH groups see USD on checkout. Paystack settles in GHS.
+    
+    IMPORTANT: For this to work, Gideon must enable 
+    "International Payments" in Paystack Dashboard.
     
     Returns:
         {
@@ -63,29 +77,35 @@ async def initialize_transaction(
             "data": None
         }
     
-    # Convert USD to kobo (smallest unit) - Paystack uses kobo for GHS
-    # Note: Paystack handles currency conversion based on your account settings
-    amount_kobo = int(amount_usd * 100)  # $5 = 500 cents
+    # Get payment configuration based on user's region
+    config = get_payment_config(country_code)
+    
+    logger.info(f"Payment: {config.display_price} ({config.amount_cents} cents) for {'African' if config.is_african else 'International'} user")
     
     payload = {
         "email": email,
-        "amount": amount_kobo,
-        "currency": "USD",
+        "amount": config.amount_cents,  # Always in cents (USD)
+        "currency": "USD",              # Always USD for both groups
         "metadata": {
             "user_id": user_id,
+            "price_usd": config.amount,
+            "display_price": config.display_price,
+            "is_african": config.is_african,
             "custom_fields": [
                 {
                     "display_name": "User ID",
                     "variable_name": "user_id",
                     "value": user_id
+                },
+                {
+                    "display_name": "Price",
+                    "variable_name": "price",
+                    "value": config.display_price
                 }
             ],
             **(metadata or {})
         }
     }
-    
-    if plan_code:
-        payload["plan"] = plan_code
     
     if callback_url:
         payload["callback_url"] = callback_url
@@ -102,7 +122,7 @@ async def initialize_transaction(
             result = response.json()
             
             if response.status_code == 200 and result.get("status"):
-                logger.info(f"Transaction initialized for {email}: {result['data']['reference']}")
+                logger.info(f"Transaction initialized: {result['data']['reference']} - {config.display_price}")
                 return result
             else:
                 logger.error(f"Paystack error: {result}")
@@ -128,48 +148,36 @@ async def create_subscription(
     callback_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Create a subscription checkout for a user (monthly only)
+    Create a payment for subscription (one-time payment, we handle subscription internally)
+    
+    Fixed USD Pricing:
+    - African users: $5/month (500 cents)
+    - International users: $20/month (2000 cents)
     
     Args:
         email: User's email
         user_id: User's UUID
-        country_code: ISO 2-letter country code for pricing
+        country_code: ISO 2-letter country code for pricing tier
         callback_url: URL to redirect after payment
     
     Returns:
         Dict with authorization_url to redirect user to
     """
-    plan_code = get_paystack_plan_code(country_code)
-    price = get_user_price("pro", country_code)
+    config = get_payment_config(country_code)
     
-    if not plan_code:
-        # If no plan code configured, use one-time payment
-        logger.warning("No plan code configured - using one-time payment")
-        return await initialize_transaction(
-            email=email,
-            amount_usd=price,
-            user_id=user_id,
-            callback_url=callback_url,
-            metadata={
-                "type": "subscription",
-                "tier": "pro",
-                "billing_cycle": "monthly",
-                "is_africa": is_african_user(country_code)
-            }
-        )
+    logger.info(f"Creating payment: {config.display_price} for {'African' if config.is_african else 'International'} user ({email})")
     
-    # Initialize with plan for recurring subscription
     return await initialize_transaction(
         email=email,
-        amount_usd=price,
+        country_code=country_code,
         user_id=user_id,
-        plan_code=plan_code,
         callback_url=callback_url,
         metadata={
             "type": "subscription",
             "tier": "pro",
             "billing_cycle": "monthly",
-            "is_africa": is_african_user(country_code)
+            "is_africa": config.is_african,
+            "price_usd": config.amount
         }
     )
 

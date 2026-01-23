@@ -27,6 +27,7 @@ from app.core.subscription import (
     get_tier_limits,
     get_tier_pricing,
     get_user_price,
+    get_payment_config,
     check_generation_limit,
     is_african_user,
     is_payment_configured
@@ -284,9 +285,9 @@ async def create_upgrade_intent(
                     logger.info(f"Updated user {user_id} location at checkout: {country_code}")
         
         # Create Paystack checkout session
-        price = get_user_price(tier, country_code)
+        payment_config = get_payment_config(country_code)
         
-        logger.info(f"Creating Paystack checkout: user={user_id}, tier={tier}, price=${price}/month")
+        logger.info(f"Creating Paystack checkout: user={user_id}, tier={tier}, price={payment_config.display_price}/month")
         
         result = await paystack_create_subscription(
             email=user.email,
@@ -301,7 +302,7 @@ async def create_upgrade_intent(
             return UpgradeIntentResponse(
                 success=True,
                 redirect_url=authorization_url,
-                message=f"Redirecting to payment for ${price}/month",
+                message=f"Redirecting to payment for {payment_config.display_price}/month",
                 requires_payment_setup=False
             )
         else:

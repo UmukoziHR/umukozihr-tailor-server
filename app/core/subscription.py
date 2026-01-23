@@ -234,26 +234,75 @@ def get_all_plans(country_code: Optional[str] = None) -> List[dict]:
 
 
 # =============================================================================
-# PAYMENT PROVIDER - PAYSTACK (Global via Ghana account)
+# PAYMENT PROVIDER - PAYSTACK (Ghana account with International Payments)
 # =============================================================================
+# Ghana Paystack account settles in GHS, but we charge in USD for consistency
+# BOTH African and International users see USD on checkout
+# Paystack converts to GHS for settlement automatically
+#
+# REQUIREMENT: International Payments must be enabled in Paystack Dashboard
+# =============================================================================
+
 PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
 
-# Plan codes - will be created in Paystack dashboard
-# Format: PLN_xxxxx (monthly only - no yearly plans)
-PAYSTACK_PLAN_AFRICA_MONTHLY = os.getenv("PAYSTACK_PLAN_AFRICA_MONTHLY", "")  # $5/month
-PAYSTACK_PLAN_GLOBAL_MONTHLY = os.getenv("PAYSTACK_PLAN_GLOBAL_MONTHLY", "")  # $20/month
+# =============================================================================
+# FIXED USD PRICING (both groups pay in USD, no GHS display)
+# =============================================================================
+# Africans: $5/month (500 cents)
+# International: $20/month (2000 cents)
+# Currency is ALWAYS USD for both - Paystack settles in GHS
+
+USD_PRICE_AFRICA = 5.00    # $5 for African users
+USD_PRICE_GLOBAL = 20.00   # $20 for international users
+
 
 def is_payment_configured() -> bool:
     """Check if Paystack is configured"""
     return bool(PAYSTACK_SECRET_KEY)
 
 
-def get_paystack_plan_code(country_code: Optional[str]) -> Optional[str]:
-    """Get the appropriate Paystack plan code based on region (monthly only)"""
+@dataclass
+class PaymentConfig:
+    """Payment configuration for a transaction"""
+    currency: str          # Always "USD"
+    amount: float          # Amount in USD (5.00 or 20.00)
+    amount_cents: int      # Amount in cents (500 or 2000)
+    display_price: str     # Human-readable ("$5" or "$20")
+    is_african: bool       # Whether user is from Africa
+
+
+def get_payment_config(country_code: Optional[str]) -> PaymentConfig:
+    """
+    Get payment configuration based on user's region.
+    
+    - African users: $5/month (500 cents)
+    - International users: $20/month (2000 cents)
+    
+    BOTH see USD on checkout. Paystack converts to GHS for settlement.
+    International payments must be enabled in Paystack Dashboard.
+    """
     is_africa = is_african_user(country_code)
-    return PAYSTACK_PLAN_AFRICA_MONTHLY if is_africa else PAYSTACK_PLAN_GLOBAL_MONTHLY
+    
+    if is_africa:
+        # African users: $5/month
+        return PaymentConfig(
+            currency="USD",
+            amount=USD_PRICE_AFRICA,
+            amount_cents=int(USD_PRICE_AFRICA * 100),  # 500 cents
+            display_price=f"${USD_PRICE_AFRICA:.0f}",
+            is_african=True
+        )
+    else:
+        # International users: $20/month
+        return PaymentConfig(
+            currency="USD",
+            amount=USD_PRICE_GLOBAL,
+            amount_cents=int(USD_PRICE_GLOBAL * 100),  # 2000 cents
+            display_price=f"${USD_PRICE_GLOBAL:.0f}",
+            is_african=False
+        )
 
 
 # Log status on module load
