@@ -6,10 +6,10 @@ s3_client = boto3.client(
     's3',
     aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
     aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.getenv('AWS_REGION', 'us-east-1')
+    region_name=os.getenv('AWS_REGION', 'eu-west-1')
 )
 
-BUCKET_NAME = os.getenv('S3_BUCKET', 'umukozihr-artifacts')
+BUCKET_NAME = os.getenv('S3_BUCKET', 'umukozihr-tailor-artifacts')
 
 def upload_to_s3(local_path: str) -> str:
     """Upload file to S3 and return signed URL"""

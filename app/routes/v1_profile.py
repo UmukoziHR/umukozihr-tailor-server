@@ -532,18 +532,17 @@ AVATAR_SIZE = (256, 256)  # Output size
 
 def upload_avatar_to_s3(image_bytes: bytes, user_id: str, content_type: str) -> str:
     """
-    Upload avatar to S3 with public access.
-    Returns permanent public URL.
+    Upload avatar to S3 and return a long-lived pre-signed URL.
+    Works regardless of bucket public access settings.
     """
     try:
         s3_client = boto3.client(
             's3',
             aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-            region_name=os.getenv('AWS_REGION', 'us-east-1')
+            region_name=os.getenv('AWS_REGION', 'eu-west-1')
         )
-        bucket = os.getenv('S3_BUCKET', 'umukozihr-artifacts')
-        region = os.getenv('AWS_REGION', 'us-east-1')
+        bucket = os.getenv('S3_BUCKET', 'umukozihr-tailor-artifacts')
         
         # File extension from content type
         ext_map = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif'}
@@ -551,19 +550,24 @@ def upload_avatar_to_s3(image_bytes: bytes, user_id: str, content_type: str) -> 
         
         s3_key = f"avatars/{user_id}.{ext}"
         
-        # Upload with public-read ACL
+        # Upload without ACL (works with Block Public Access)
         s3_client.put_object(
             Bucket=bucket,
             Key=s3_key,
             Body=image_bytes,
             ContentType=content_type,
-            ACL='public-read',
             CacheControl='max-age=31536000'  # 1 year cache
         )
         
-        # Return permanent public URL
-        url = f"https://{bucket}.s3.{region}.amazonaws.com/{s3_key}"
-        logger.info(f"Avatar uploaded to S3: {url}")
+        # Generate long-lived pre-signed URL (7 days)
+        # For avatars, we regenerate URL on each fetch if needed
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': s3_key},
+            ExpiresIn=604800  # 7 days
+        )
+        
+        logger.info(f"Avatar uploaded to S3: {s3_key}")
         return url
         
     except NoCredentialsError:
