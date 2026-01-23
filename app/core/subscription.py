@@ -234,13 +234,12 @@ def get_all_plans(country_code: Optional[str] = None) -> List[dict]:
 
 
 # =============================================================================
-# PAYMENT PROVIDER - PAYSTACK (Ghana account with International Payments)
+# PAYMENT PROVIDER - PAYSTACK (Ghana account - GHS only)
 # =============================================================================
-# Ghana Paystack account settles in GHS, but we charge in USD for consistency
-# BOTH African and International users see USD on checkout
-# Paystack converts to GHS for settlement automatically
-#
-# REQUIREMENT: International Payments must be enabled in Paystack Dashboard
+# Ghana Paystack account ONLY accepts GHS currency
+# Frontend shows USD, but we convert to GHS before sending to Paystack
+# Users see: $5 (Africa) or $20 (International)
+# Paystack receives: GHS equivalent in pesewas
 # =============================================================================
 
 PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
@@ -248,14 +247,19 @@ PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
 
 # =============================================================================
-# FIXED USD PRICING (both groups pay in USD, no GHS display)
+# PRICING - Show USD, charge GHS
 # =============================================================================
-# Africans: $5/month (500 cents)
-# International: $20/month (2000 cents)
-# Currency is ALWAYS USD for both - Paystack settles in GHS
+# Exchange rate: 1 USD = 16 GHS (update as needed)
+USD_TO_GHS_RATE = float(os.getenv("USD_TO_GHS_RATE", "16.0"))
 
+# USD prices (what users SEE)
 USD_PRICE_AFRICA = 5.00    # $5 for African users
 USD_PRICE_GLOBAL = 20.00   # $20 for international users
+
+# GHS prices (what Paystack RECEIVES)
+# $5 * 16 = 80 GHS, $20 * 16 = 320 GHS
+GHS_PRICE_AFRICA = USD_PRICE_AFRICA * USD_TO_GHS_RATE   # 80 GHS
+GHS_PRICE_GLOBAL = USD_PRICE_GLOBAL * USD_TO_GHS_RATE   # 320 GHS
 
 
 def is_payment_configured() -> bool:
@@ -266,41 +270,42 @@ def is_payment_configured() -> bool:
 @dataclass
 class PaymentConfig:
     """Payment configuration for a transaction"""
-    currency: str          # Always "USD"
-    amount: float          # Amount in USD (5.00 or 20.00)
-    amount_cents: int      # Amount in cents (500 or 2000)
-    display_price: str     # Human-readable ("$5" or "$20")
-    is_african: bool       # Whether user is from Africa
+    display_currency: str  # "USD" - what user sees
+    display_price: str     # "$5" or "$20" - what user sees
+    usd_amount: float      # 5.00 or 20.00
+    # What we send to Paystack (GHS)
+    paystack_currency: str # Always "GHS"
+    paystack_amount: int   # Amount in pesewas (8000 or 32000)
+    is_african: bool
 
 
 def get_payment_config(country_code: Optional[str]) -> PaymentConfig:
     """
     Get payment configuration based on user's region.
     
-    - African users: $5/month (500 cents)
-    - International users: $20/month (2000 cents)
-    
-    BOTH see USD on checkout. Paystack converts to GHS for settlement.
-    International payments must be enabled in Paystack Dashboard.
+    Users SEE: $5 (Africa) or $20 (International)
+    Paystack GETS: 80 GHS or 320 GHS in pesewas
     """
     is_africa = is_african_user(country_code)
     
     if is_africa:
-        # African users: $5/month
+        # African users: Show $5, charge 80 GHS
         return PaymentConfig(
-            currency="USD",
-            amount=USD_PRICE_AFRICA,
-            amount_cents=int(USD_PRICE_AFRICA * 100),  # 500 cents
-            display_price=f"${USD_PRICE_AFRICA:.0f}",
+            display_currency="USD",
+            display_price="$5",
+            usd_amount=USD_PRICE_AFRICA,
+            paystack_currency="GHS",
+            paystack_amount=int(GHS_PRICE_AFRICA * 100),  # 8000 pesewas
             is_african=True
         )
     else:
-        # International users: $20/month
+        # International users: Show $20, charge 320 GHS
         return PaymentConfig(
-            currency="USD",
-            amount=USD_PRICE_GLOBAL,
-            amount_cents=int(USD_PRICE_GLOBAL * 100),  # 2000 cents
-            display_price=f"${USD_PRICE_GLOBAL:.0f}",
+            display_currency="USD",
+            display_price="$20",
+            usd_amount=USD_PRICE_GLOBAL,
+            paystack_currency="GHS",
+            paystack_amount=int(GHS_PRICE_GLOBAL * 100),  # 32000 pesewas
             is_african=False
         )
 

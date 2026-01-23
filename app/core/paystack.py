@@ -1,17 +1,15 @@
 """
 Paystack Payment Integration
-v1.5 - Fixed USD Pricing (Both African and International users pay in USD)
+v1.6 - Show USD, Charge GHS
 
 Paystack API Docs: https://paystack.com/docs/api
 
 Key insight:
-- Ghana Paystack account settles in GHS
-- BUT we charge BOTH groups in USD for consistency
-- African users: $5/month (500 cents)
-- International users: $20/month (2000 cents)
-- Everyone sees USD on checkout, Paystack settles in GHS
-
-REQUIREMENT: International Payments must be enabled in Paystack Dashboard
+- Ghana Paystack account ONLY accepts GHS
+- Frontend shows USD ($5 or $20) to users
+- Backend converts to GHS and sends to Paystack
+- African users: $5 → 80 GHS (8000 pesewas)
+- International users: $20 → 320 GHS (32000 pesewas)
 """
 import httpx
 import logging
@@ -24,9 +22,7 @@ from app.core.subscription import (
     get_payment_config,
     get_user_price,
     is_african_user,
-    PaymentConfig,
-    USD_PRICE_AFRICA,
-    USD_PRICE_GLOBAL
+    PaymentConfig
 )
 
 logger = logging.getLogger(__name__)
@@ -48,15 +44,10 @@ async def initialize_transaction(
     metadata: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
-    Initialize a Paystack transaction with fixed USD pricing.
+    Initialize a Paystack transaction.
     
-    - African users: $5/month (500 cents)
-    - International users: $20/month (2000 cents)
-    
-    BOTH groups see USD on checkout. Paystack settles in GHS.
-    
-    IMPORTANT: For this to work, Gideon must enable 
-    "International Payments" in Paystack Dashboard.
+    Users SEE: $5 (Africa) or $20 (International)
+    Paystack GETS: GHS in pesewas (8000 or 32000)
     
     Returns:
         {
@@ -77,19 +68,20 @@ async def initialize_transaction(
             "data": None
         }
     
-    # Get payment configuration based on user's region
+    # Get payment configuration
     config = get_payment_config(country_code)
     
-    logger.info(f"Payment: {config.display_price} ({config.amount_cents} cents) for {'African' if config.is_african else 'International'} user")
+    # Log: Show USD but send GHS
+    logger.info(f"Payment: User sees {config.display_price}, Paystack gets {config.paystack_amount} pesewas (GHS) - {'African' if config.is_african else 'International'}")
     
     payload = {
         "email": email,
-        "amount": config.amount_cents,  # Always in cents (USD)
-        "currency": "USD",              # Always USD for both groups
+        "amount": config.paystack_amount,     # GHS in pesewas (8000 or 32000)
+        "currency": config.paystack_currency,  # Always "GHS"
         "metadata": {
             "user_id": user_id,
-            "price_usd": config.amount,
-            "display_price": config.display_price,
+            "display_price": config.display_price,  # $5 or $20
+            "usd_amount": config.usd_amount,        # 5.00 or 20.00
             "is_african": config.is_african,
             "custom_fields": [
                 {
@@ -98,8 +90,8 @@ async def initialize_transaction(
                     "value": user_id
                 },
                 {
-                    "display_name": "Price",
-                    "variable_name": "price",
+                    "display_name": "Price (USD)",
+                    "variable_name": "price_usd",
                     "value": config.display_price
                 }
             ],
@@ -150,9 +142,8 @@ async def create_subscription(
     """
     Create a payment for subscription (one-time payment, we handle subscription internally)
     
-    Fixed USD Pricing:
-    - African users: $5/month (500 cents)
-    - International users: $20/month (2000 cents)
+    Users SEE: $5 (Africa) or $20 (International)  
+    Paystack GETS: 80 GHS or 320 GHS in pesewas
     
     Args:
         email: User's email
@@ -165,7 +156,7 @@ async def create_subscription(
     """
     config = get_payment_config(country_code)
     
-    logger.info(f"Creating payment: {config.display_price} for {'African' if config.is_african else 'International'} user ({email})")
+    logger.info(f"Creating payment: {config.display_price} (GHS {config.paystack_amount/100:.0f}) for {'African' if config.is_african else 'International'} user ({email})")
     
     return await initialize_transaction(
         email=email,
@@ -177,7 +168,7 @@ async def create_subscription(
             "tier": "pro",
             "billing_cycle": "monthly",
             "is_africa": config.is_african,
-            "price_usd": config.amount
+            "price_usd": config.usd_amount
         }
     )
 
