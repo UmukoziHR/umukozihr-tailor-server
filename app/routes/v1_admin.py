@@ -661,3 +661,81 @@ def make_user_admin(
         return {"success": True, "message": f"Admin access granted to {user.email}"}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user ID format")
+
+
+@router.post("/users/{user_id}/upgrade-to-pro")
+def manual_upgrade_to_pro(
+    user_id: str,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /admin/users/{user_id}/upgrade-to-pro
+    Manually upgrade a user to Pro subscription (admin only)
+    Use this when Paystack webhook fails or for manual upgrades
+    """
+    try:
+        user_uuid = UUID(user_id)
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        now = datetime.utcnow()
+        expires_at = now + timedelta(days=30)
+        
+        user.subscription_tier = "pro"
+        user.subscription_status = "active"
+        user.subscription_started_at = now
+        user.subscription_expires_at = expires_at
+        user.monthly_generations_limit = -1  # Unlimited
+        user.monthly_generations_used = 0  # Reset usage
+        
+        db.commit()
+        
+        logger.info(f"Manual Pro upgrade for {user.email} by {admin['email']}, expires: {expires_at}")
+        
+        return {
+            "success": True,
+            "message": f"User {user.email} upgraded to Pro",
+            "expires_at": expires_at.isoformat()
+        }
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+
+
+@router.post("/users/upgrade-by-email")
+def upgrade_user_by_email(
+    email: str = Query(..., description="User email to upgrade"),
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /admin/users/upgrade-by-email?email=user@example.com
+    Upgrade user to Pro by email address
+    """
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email {email} not found")
+    
+    now = datetime.utcnow()
+    expires_at = now + timedelta(days=30)
+    
+    user.subscription_tier = "pro"
+    user.subscription_status = "active"
+    user.subscription_started_at = now
+    user.subscription_expires_at = expires_at
+    user.monthly_generations_limit = -1  # Unlimited
+    user.monthly_generations_used = 0  # Reset usage
+    
+    db.commit()
+    
+    logger.info(f"Manual Pro upgrade for {email} by {admin['email']}, expires: {expires_at}")
+    
+    return {
+        "success": True,
+        "message": f"User {email} upgraded to Pro",
+        "user_id": str(user.id),
+        "expires_at": expires_at.isoformat()
+    }
