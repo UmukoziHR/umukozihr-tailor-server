@@ -178,6 +178,30 @@ def migrate_v1_2_to_v1_3(db):
         # Add profile_version column
         if 'profile_version' not in runs_columns:
             migrations.append("ALTER TABLE runs ADD COLUMN profile_version INTEGER")
+        
+        # v1.5 Job Landing Celebration columns
+        if 'job_landed' not in runs_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE runs ADD COLUMN job_landed BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE runs ADD COLUMN job_landed INTEGER DEFAULT 0")
+        
+        if 'landed_at' not in runs_columns:
+            migrations.append("ALTER TABLE runs ADD COLUMN landed_at TIMESTAMP")
+    
+    # v1.5 Job Landing Celebration columns for users
+    if 'users' in inspector.get_table_names():
+        if 'landed_job_count' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN landed_job_count INTEGER DEFAULT 0")
+        
+        if 'latest_landed_company' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN latest_landed_company VARCHAR")
+        
+        if 'latest_landed_title' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN latest_landed_title VARCHAR")
+        
+        if 'latest_landed_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN latest_landed_at TIMESTAMP")
 
     # Execute migrations
     if migrations:

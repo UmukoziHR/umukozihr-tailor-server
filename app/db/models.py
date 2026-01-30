@@ -40,6 +40,11 @@ class User(Base):
     usage_reset_at = Column(DateTime, nullable=True)  # When to reset monthly count
     # Profile picture
     avatar_url = Column(String, nullable=True)  # URL to profile picture
+    # Job Landing Celebration (v1.5)
+    landed_job_count = Column(Integer, default=0)  # Total jobs landed
+    latest_landed_company = Column(String, nullable=True)  # Most recent landed company
+    latest_landed_title = Column(String, nullable=True)  # Most recent landed job title
+    latest_landed_at = Column(DateTime, nullable=True)  # When they last landed a job
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Profile(Base):
@@ -76,6 +81,9 @@ class Run(Base):
     profile_version = Column(Integer, nullable=True)
     llm_output = Column(JSON)
     artifacts_urls = Column(JSON)
+    # Job Landing Celebration (v1.5)
+    job_landed = Column(Boolean, default=False)  # Did user land this job?
+    landed_at = Column(DateTime, nullable=True)  # When they marked it as landed
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

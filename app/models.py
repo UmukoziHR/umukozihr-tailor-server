@@ -234,11 +234,15 @@ class HistoryItem(BaseModel):
     job_id: str
     company: str
     title: str
+    job_title: Optional[str] = None  # Alias for frontend compatibility
     region: str
     status: str
     profile_version: Optional[int] = None
     artifacts_urls: Dict
     created_at: str
+    # Job landing celebration fields
+    job_landed: bool = False
+    landed_at: Optional[str] = None
 
 class HistoryResponse(BaseModel):
     """Response for GET /api/v1/history"""
@@ -295,3 +299,39 @@ class ShareLinksResponse(BaseModel):
     email_subject: str
     email_body: str
     copy_text: str
+
+
+# v1.5 Job Landing Celebration
+
+class LandedJobItem(BaseModel):
+    """Single landed job item"""
+    run_id: str
+    job_id: str
+    company: str
+    title: str
+    region: str
+    landed_at: str
+    created_at: str  # When they originally applied
+
+class JobLandedRequest(BaseModel):
+    """Request for marking a job as landed"""
+    run_id: str
+
+class JobLandedResponse(BaseModel):
+    """Response after marking job as landed"""
+    success: bool
+    company: str
+    title: str
+    landed_at: str
+    total_landed: int
+    message: str
+    linkedin_share_url: str
+    linkedin_share_text: str
+
+class LandedStatsResponse(BaseModel):
+    """User's job landing statistics"""
+    total_landed: int
+    latest_company: Optional[str] = None
+    latest_title: Optional[str] = None
+    latest_landed_at: Optional[str] = None
+    landed_jobs: List[LandedJobItem] = []
