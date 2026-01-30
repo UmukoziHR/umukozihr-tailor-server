@@ -102,6 +102,17 @@ class SubscriptionStats(BaseModel):
     avg_generations_per_user: float
 
 
+class JobLandingStats(BaseModel):
+    """Job Landing Celebration Stats - v1.5"""
+    total_landed: int
+    landed_today: int
+    landed_this_week: int
+    landed_this_month: int
+    users_with_landed_jobs: int
+    top_companies: List[dict]  # [{company, count}]
+    landing_rate: float  # percentage of runs that resulted in landed jobs
+
+
 class AdminDashboardResponse(BaseModel):
     user_activity: UserActivityStats
     generation: GenerationStats
@@ -109,6 +120,7 @@ class AdminDashboardResponse(BaseModel):
     system_health: SystemHealthStats
     subscription: SubscriptionStats
     geolocation: GeolocationStats
+    job_landing: JobLandingStats
     signups_trend: List[DailyMetric]
     generations_trend: List[DailyMetric]
 
@@ -495,6 +507,58 @@ def get_admin_dashboard(
         unknown_location=unknown_location
     )
     
+    # Job Landing Stats - v1.5
+    try:
+        total_landed = db.query(Run).filter(Run.job_landed == True).count()
+        landed_today = db.query(Run).filter(
+            and_(Run.job_landed == True, Run.landed_at >= today_start)
+        ).count()
+        landed_this_week = db.query(Run).filter(
+            and_(Run.job_landed == True, Run.landed_at >= week_start)
+        ).count()
+        landed_this_month = db.query(Run).filter(
+            and_(Run.job_landed == True, Run.landed_at >= month_start)
+        ).count()
+        
+        users_with_landed = db.query(func.count(func.distinct(Run.user_id))).filter(
+            Run.job_landed == True
+        ).scalar() or 0
+        
+        # Top companies where users landed
+        company_counts = db.query(
+            Job.company, func.count(Run.id)
+        ).join(Run, Run.job_id == Job.id).filter(
+            Run.job_landed == True
+        ).group_by(Job.company).order_by(desc(func.count(Run.id))).limit(10).all()
+        
+        top_landing_companies = [
+            {"company": company, "count": count} 
+            for company, count in company_counts
+        ]
+        
+        # Landing rate (landed jobs / total runs)
+        landing_rate = round((total_landed / total_runs * 100) if total_runs > 0 else 0, 2)
+        
+    except Exception as e:
+        logger.warning(f"Error fetching job landing stats: {e}")
+        total_landed = 0
+        landed_today = 0
+        landed_this_week = 0
+        landed_this_month = 0
+        users_with_landed = 0
+        top_landing_companies = []
+        landing_rate = 0
+    
+    job_landing_stats = JobLandingStats(
+        total_landed=total_landed,
+        landed_today=landed_today,
+        landed_this_week=landed_this_week,
+        landed_this_month=landed_this_month,
+        users_with_landed_jobs=users_with_landed,
+        top_companies=top_landing_companies,
+        landing_rate=landing_rate
+    )
+    
     return AdminDashboardResponse(
         user_activity=user_activity,
         generation=generation_stats,
@@ -502,6 +566,7 @@ def get_admin_dashboard(
         system_health=system_health,
         subscription=subscription_stats,
         geolocation=geolocation_stats,
+        job_landing=job_landing_stats,
         signups_trend=signups_trend,
         generations_trend=generations_trend
     )
