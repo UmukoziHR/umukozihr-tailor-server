@@ -45,6 +45,15 @@ class User(Base):
     latest_landed_company = Column(String, nullable=True)  # Most recent landed company
     latest_landed_title = Column(String, nullable=True)  # Most recent landed job title
     latest_landed_at = Column(DateTime, nullable=True)  # When they last landed a job
+    # Gamification System (v1.6)
+    interviews_count = Column(Integer, default=0)  # Total interviews received
+    offers_count = Column(Integer, default=0)  # Total offers received
+    current_streak_days = Column(Integer, default=0)  # Current activity streak
+    longest_streak_days = Column(Integer, default=0)  # Personal best streak
+    last_activity_date = Column(DateTime, nullable=True)  # Last day user was active
+    total_xp = Column(Integer, default=0)  # Total experience points earned
+    achievements_unlocked = Column(JSON, default=[])  # List of unlocked achievement IDs
+    active_challenges = Column(JSON, default=[])  # Currently active challenge data
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Profile(Base):
@@ -84,6 +93,11 @@ class Run(Base):
     # Job Landing Celebration (v1.5)
     job_landed = Column(Boolean, default=False)  # Did user land this job?
     landed_at = Column(DateTime, nullable=True)  # When they marked it as landed
+    # Gamification: Interview & Offer Tracking (v1.6)
+    got_interview = Column(Boolean, default=False)  # Did user get interview for this?
+    interview_at = Column(DateTime, nullable=True)  # When they marked interview
+    got_offer = Column(Boolean, default=False)  # Did user get offer for this?
+    offer_at = Column(DateTime, nullable=True)  # When they marked offer
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

@@ -14,7 +14,8 @@ from botocore.exceptions import NoCredentialsError
 from app.models import (
     Profile, ProfileV3, ProfileResponse, ProfileUpdateRequest,
     ProfileUpdateResponse, CompletenessResponse,
-    ShareSettingsRequest, ShareSettingsResponse, ShareLinksResponse
+    ShareSettingsRequest, ShareSettingsResponse, ShareLinksResponse,
+    JourneyResponse, JourneyStats, Achievement, Challenge
 )
 from app.db.database import get_db
 from app.db.models import Profile as DBProfile, User, Job, Run, UserEvent, GenerationMetric
@@ -727,3 +728,210 @@ def get_avatar(
     except Exception as e:
         logger.error(f"Get avatar error for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get avatar")
+
+
+# ============================================
+# Gamification: Journey & Achievements (v1.6)
+# ============================================
+
+@router.get("/journey", response_model=JourneyResponse)
+def get_journey(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    GET /api/v1/profile/journey
+    Get user's job hunt journey stats, achievements, and active challenges
+    """
+    user_id = current_user["user_id"]
+    logger.info(f"=== GET JOURNEY === User: {user_id}")
+
+    try:
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        user = db.query(User).filter(User.id == user_uuid).first()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Import achievements module
+        from app.core.achievements import (
+            get_user_stats, get_all_achievements, get_active_challenges,
+            check_achievements, unlock_achievements, ACHIEVEMENTS
+        )
+
+        # Get stats
+        stats = get_user_stats(db, str(user_uuid))
+        is_pro = user.subscription_tier == "pro"
+
+        # Build journey stats
+        journey_stats = JourneyStats(
+            applications=stats.get("applications", 0),
+            interviews=stats.get("interviews", 0),
+            offers=stats.get("offers", 0),
+            landed=stats.get("landed", 0),
+            current_streak=stats.get("streak", 0),
+            longest_streak=stats.get("longest_streak", 0),
+            total_xp=stats.get("total_xp", 0)
+        )
+
+        # Build achievements list
+        unlocked_ids = set(stats.get("achievements_unlocked", []))
+        achievements_list = []
+        
+        for achievement in get_all_achievements():
+            achievements_list.append(Achievement(
+                id=achievement["id"],
+                name=achievement["name"],
+                description=achievement["description"],
+                icon=achievement["icon"],
+                tier=achievement["tier"].value if hasattr(achievement["tier"], 'value') else achievement["tier"],
+                xp=achievement["xp"],
+                color=achievement["color"],
+                unlocked=achievement["id"] in unlocked_ids,
+                pro_only=achievement.get("pro_only", False)
+            ))
+
+        # Get active challenges with progress
+        active_challenges_raw = get_active_challenges(str(user_uuid), is_pro)
+        active_challenges = []
+        
+        for ch in active_challenges_raw:
+            # Calculate current progress based on challenge type
+            current = 0
+            if ch["type"] == "applications":
+                # Count applications this week/month
+                from datetime import datetime, timedelta
+                from sqlalchemy import and_
+                
+                if ch["period"] == "weekly":
+                    # Start of this week (Monday)
+                    today = datetime.utcnow()
+                    start_of_week = today - timedelta(days=today.weekday())
+                    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+                    current = db.query(Run).filter(
+                        and_(
+                            Run.user_id == user_uuid,
+                            Run.status == "completed",
+                            Run.created_at >= start_of_week
+                        )
+                    ).count()
+                elif ch["period"] == "monthly":
+                    # Start of this month
+                    today = datetime.utcnow()
+                    start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                    current = db.query(Run).filter(
+                        and_(
+                            Run.user_id == user_uuid,
+                            Run.status == "completed",
+                            Run.created_at >= start_of_month
+                        )
+                    ).count()
+            elif ch["type"] == "interviews":
+                current = stats.get("interviews", 0)
+            elif ch["type"] == "offers":
+                current = stats.get("offers", 0)
+            
+            active_challenges.append(Challenge(
+                id=ch["id"],
+                name=ch["name"],
+                description=ch["description"],
+                icon=ch["icon"],
+                type=ch["type"],
+                target=ch["target"],
+                current=min(current, ch["target"]),
+                xp=ch["xp"],
+                period=ch["period"],
+                ends_at=ch["ends_at"],
+                completed=current >= ch["target"],
+                pro_only=ch.get("pro_only", False)
+            ))
+
+        # Check for any newly unlocked achievements
+        newly_unlocked, xp_earned = check_achievements(stats)
+        recently_unlocked = []
+        
+        if newly_unlocked:
+            achievement_ids = [a["id"] for a in newly_unlocked]
+            unlock_achievements(db, str(user_uuid), achievement_ids, xp_earned)
+            
+            for a in newly_unlocked:
+                recently_unlocked.append(Achievement(
+                    id=a["id"],
+                    name=a["name"],
+                    description=a["description"],
+                    icon=a["icon"],
+                    tier=a["tier"].value if hasattr(a["tier"], 'value') else a["tier"],
+                    xp=a["xp"],
+                    color=a["color"],
+                    unlocked=True,
+                    pro_only=a.get("pro_only", False)
+                ))
+            
+            # Update journey stats with new XP
+            journey_stats.total_xp += xp_earned
+
+        logger.info(f"=== GET JOURNEY SUCCESS === User: {user_id}, XP: {journey_stats.total_xp}, Achievements: {len(unlocked_ids)}")
+
+        return JourneyResponse(
+            stats=journey_stats,
+            achievements=achievements_list,
+            active_challenges=active_challenges,
+            recently_unlocked=recently_unlocked
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"=== GET JOURNEY ERROR === User: {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get journey data")
+
+
+@router.post("/journey/check-achievements")
+def check_and_unlock_achievements(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /api/v1/profile/journey/check-achievements
+    Check and unlock any earned achievements
+    """
+    user_id = current_user["user_id"]
+    logger.info(f"=== CHECK ACHIEVEMENTS === User: {user_id}")
+
+    try:
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        
+        from app.core.achievements import get_user_stats, check_achievements, unlock_achievements
+
+        stats = get_user_stats(db, str(user_uuid))
+        newly_unlocked, xp_earned = check_achievements(stats)
+
+        if newly_unlocked:
+            achievement_ids = [a["id"] for a in newly_unlocked]
+            unlock_achievements(db, str(user_uuid), achievement_ids, xp_earned)
+
+            return {
+                "success": True,
+                "unlocked": [
+                    {
+                        "id": a["id"],
+                        "name": a["name"],
+                        "xp": a["xp"],
+                        "icon": a["icon"],
+                        "color": a["color"]
+                    } for a in newly_unlocked
+                ],
+                "xp_earned": xp_earned,
+                "message": f"Congratulations! You unlocked {len(newly_unlocked)} new achievement(s)!"
+            }
+
+        return {
+            "success": True,
+            "unlocked": [],
+            "xp_earned": 0,
+            "message": "No new achievements to unlock"
+        }
+
+    except Exception as e:
+        logger.error(f"=== CHECK ACHIEVEMENTS ERROR === User: {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to check achievements")

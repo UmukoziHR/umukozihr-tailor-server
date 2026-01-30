@@ -113,6 +113,25 @@ class JobLandingStats(BaseModel):
     landing_rate: float  # percentage of runs that resulted in landed jobs
 
 
+class GamificationStats(BaseModel):
+    """Gamification System Stats - v1.6"""
+    total_interviews: int
+    total_offers: int
+    interviews_today: int
+    offers_today: int
+    interviews_this_week: int
+    offers_this_week: int
+    users_with_interviews: int
+    users_with_offers: int
+    interview_rate: float  # percentage of runs that got interviews
+    offer_rate: float  # percentage of interviews that got offers
+    total_xp_awarded: int
+    achievements_unlocked: int
+    avg_streak_days: float
+    max_streak_days: int
+    users_with_streaks: int  # users with streak > 0
+
+
 class AdminDashboardResponse(BaseModel):
     user_activity: UserActivityStats
     generation: GenerationStats
@@ -121,6 +140,7 @@ class AdminDashboardResponse(BaseModel):
     subscription: SubscriptionStats
     geolocation: GeolocationStats
     job_landing: JobLandingStats
+    gamification: GamificationStats
     signups_trend: List[DailyMetric]
     generations_trend: List[DailyMetric]
 
@@ -559,6 +579,90 @@ def get_admin_dashboard(
         landing_rate=landing_rate
     )
     
+    # Gamification Stats - v1.6
+    try:
+        total_interviews = db.query(Run).filter(Run.got_interview == True).count()
+        total_offers = db.query(Run).filter(Run.got_offer == True).count()
+        
+        interviews_today = db.query(Run).filter(
+            and_(Run.got_interview == True, Run.interview_at >= today_start)
+        ).count()
+        offers_today = db.query(Run).filter(
+            and_(Run.got_offer == True, Run.offer_at >= today_start)
+        ).count()
+        
+        interviews_this_week = db.query(Run).filter(
+            and_(Run.got_interview == True, Run.interview_at >= week_start)
+        ).count()
+        offers_this_week = db.query(Run).filter(
+            and_(Run.got_offer == True, Run.offer_at >= week_start)
+        ).count()
+        
+        users_with_interviews = db.query(func.count(func.distinct(Run.user_id))).filter(
+            Run.got_interview == True
+        ).scalar() or 0
+        
+        users_with_offers = db.query(func.count(func.distinct(Run.user_id))).filter(
+            Run.got_offer == True
+        ).scalar() or 0
+        
+        # Rates
+        interview_rate = round((total_interviews / total_runs * 100) if total_runs > 0 else 0, 2)
+        offer_rate = round((total_offers / total_interviews * 100) if total_interviews > 0 else 0, 2)
+        
+        # XP and achievements
+        total_xp = db.query(func.sum(User.total_xp)).scalar() or 0
+        
+        # Count total achievements unlocked (sum of array lengths)
+        achievements_count = 0
+        users_with_achievements = db.query(User).filter(
+            User.achievements_unlocked != None
+        ).all()
+        for u in users_with_achievements:
+            if u.achievements_unlocked:
+                achievements_count += len(u.achievements_unlocked)
+        
+        # Streak stats
+        avg_streak = db.query(func.avg(User.current_streak_days)).scalar() or 0
+        max_streak = db.query(func.max(User.longest_streak_days)).scalar() or 0
+        users_with_streaks = db.query(User).filter(User.current_streak_days > 0).count()
+        
+    except Exception as e:
+        logger.warning(f"Error fetching gamification stats: {e}")
+        total_interviews = 0
+        total_offers = 0
+        interviews_today = 0
+        offers_today = 0
+        interviews_this_week = 0
+        offers_this_week = 0
+        users_with_interviews = 0
+        users_with_offers = 0
+        interview_rate = 0
+        offer_rate = 0
+        total_xp = 0
+        achievements_count = 0
+        avg_streak = 0
+        max_streak = 0
+        users_with_streaks = 0
+    
+    gamification_stats = GamificationStats(
+        total_interviews=total_interviews,
+        total_offers=total_offers,
+        interviews_today=interviews_today,
+        offers_today=offers_today,
+        interviews_this_week=interviews_this_week,
+        offers_this_week=offers_this_week,
+        users_with_interviews=users_with_interviews,
+        users_with_offers=users_with_offers,
+        interview_rate=interview_rate,
+        offer_rate=offer_rate,
+        total_xp_awarded=total_xp,
+        achievements_unlocked=achievements_count,
+        avg_streak_days=round(avg_streak, 1) if avg_streak else 0,
+        max_streak_days=max_streak or 0,
+        users_with_streaks=users_with_streaks
+    )
+    
     return AdminDashboardResponse(
         user_activity=user_activity,
         generation=generation_stats,
@@ -567,6 +671,7 @@ def get_admin_dashboard(
         subscription=subscription_stats,
         geolocation=geolocation_stats,
         job_landing=job_landing_stats,
+        gamification=gamification_stats,
         signups_trend=signups_trend,
         generations_trend=generations_trend
     )

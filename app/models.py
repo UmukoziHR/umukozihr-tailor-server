@@ -243,6 +243,11 @@ class HistoryItem(BaseModel):
     # Job landing celebration fields
     job_landed: bool = False
     landed_at: Optional[str] = None
+    # Gamification: Interview & Offer tracking (v1.6)
+    got_interview: bool = False
+    interview_at: Optional[str] = None
+    got_offer: bool = False
+    offer_at: Optional[str] = None
 
 class HistoryResponse(BaseModel):
     """Response for GET /api/v1/history"""
@@ -335,3 +340,86 @@ class LandedStatsResponse(BaseModel):
     latest_title: Optional[str] = None
     latest_landed_at: Optional[str] = None
     landed_jobs: List[LandedJobItem] = []
+
+
+# v1.6 Gamification System
+
+class Achievement(BaseModel):
+    """Single achievement/badge"""
+    id: str
+    name: str
+    description: str
+    icon: str
+    tier: str  # tier_1, tier_2, tier_3
+    xp: int
+    color: str
+    unlocked: bool = False
+    unlocked_at: Optional[str] = None
+    pro_only: bool = False
+
+class Challenge(BaseModel):
+    """Active challenge"""
+    id: str
+    name: str
+    description: str
+    icon: str
+    type: str  # applications, interviews, offers, etc.
+    target: int
+    current: int = 0
+    xp: int
+    period: str  # weekly, monthly
+    ends_at: str
+    completed: bool = False
+    pro_only: bool = False
+
+class JourneyStats(BaseModel):
+    """User's job hunt journey statistics"""
+    applications: int = 0
+    interviews: int = 0
+    offers: int = 0
+    landed: int = 0
+    current_streak: int = 0
+    longest_streak: int = 0
+    total_xp: int = 0
+    
+class JourneyResponse(BaseModel):
+    """Full journey data for profile page"""
+    stats: JourneyStats
+    achievements: List[Achievement]
+    active_challenges: List[Challenge]
+    recently_unlocked: List[Achievement] = []
+
+class MarkInterviewRequest(BaseModel):
+    """Request for marking interview received"""
+    run_id: str
+
+class MarkOfferRequest(BaseModel):
+    """Request for marking offer received"""
+    run_id: str
+
+class MarkMilestoneResponse(BaseModel):
+    """Response after marking interview/offer"""
+    success: bool
+    company: str
+    title: str
+    milestone_type: str  # "interview" or "offer"
+    marked_at: str
+    total_count: int  # total interviews or offers
+    new_achievements: List[Achievement] = []
+    xp_earned: int = 0
+    message: str
+    linkedin_share_url: str
+    linkedin_share_text: str
+
+class AchievementUnlockResponse(BaseModel):
+    """Response when achievements are unlocked"""
+    unlocked: List[Achievement]
+    total_xp_earned: int
+    new_total_xp: int
+
+class StreakUpdateResponse(BaseModel):
+    """Response for streak updates"""
+    current_streak: int
+    longest_streak: int
+    is_new_milestone: bool
+    milestone_days: Optional[int] = None  # 7, 14, 30, 60, 90 if milestone

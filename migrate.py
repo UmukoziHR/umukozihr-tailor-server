@@ -188,6 +188,25 @@ def migrate_v1_2_to_v1_3(db):
         
         if 'landed_at' not in runs_columns:
             migrations.append("ALTER TABLE runs ADD COLUMN landed_at TIMESTAMP")
+        
+        # v1.6 Gamification: Interview & Offer tracking columns
+        if 'got_interview' not in runs_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE runs ADD COLUMN got_interview BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE runs ADD COLUMN got_interview INTEGER DEFAULT 0")
+        
+        if 'interview_at' not in runs_columns:
+            migrations.append("ALTER TABLE runs ADD COLUMN interview_at TIMESTAMP")
+        
+        if 'got_offer' not in runs_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE runs ADD COLUMN got_offer BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE runs ADD COLUMN got_offer INTEGER DEFAULT 0")
+        
+        if 'offer_at' not in runs_columns:
+            migrations.append("ALTER TABLE runs ADD COLUMN offer_at TIMESTAMP")
     
     # v1.5 Job Landing Celebration columns for users
     if 'users' in inspector.get_table_names():
@@ -202,6 +221,37 @@ def migrate_v1_2_to_v1_3(db):
         
         if 'latest_landed_at' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN latest_landed_at TIMESTAMP")
+        
+        # v1.6 Gamification System columns for users
+        if 'interviews_count' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN interviews_count INTEGER DEFAULT 0")
+        
+        if 'offers_count' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN offers_count INTEGER DEFAULT 0")
+        
+        if 'current_streak_days' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN current_streak_days INTEGER DEFAULT 0")
+        
+        if 'longest_streak_days' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN longest_streak_days INTEGER DEFAULT 0")
+        
+        if 'last_activity_date' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN last_activity_date TIMESTAMP")
+        
+        if 'total_xp' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN total_xp INTEGER DEFAULT 0")
+        
+        if 'achievements_unlocked' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN achievements_unlocked JSONB DEFAULT '[]'")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN achievements_unlocked TEXT DEFAULT '[]'")
+        
+        if 'active_challenges' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN active_challenges JSONB DEFAULT '[]'")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN active_challenges TEXT DEFAULT '[]'")
 
     # Execute migrations
     if migrations:
