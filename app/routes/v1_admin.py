@@ -909,3 +909,179 @@ def upgrade_user_by_email(
         "user_id": str(user.id),
         "expires_at": expires_at.isoformat()
     }
+
+
+# ============================================
+# EMAIL BROADCAST ENDPOINTS (v1.7)
+# ============================================
+
+class BroadcastEmailRequest(BaseModel):
+    """Request model for broadcast email"""
+    subject: str
+    body: str  # Plain text version
+    html: Optional[str] = None  # HTML version (optional, will use body if not provided)
+    test_mode: bool = False  # If true, only send to admin email
+
+
+class BroadcastEmailResponse(BaseModel):
+    """Response model for broadcast email"""
+    success: bool
+    message: str
+    total_recipients: int
+    successful_sends: int
+    failed_sends: int
+
+
+class SingleEmailRequest(BaseModel):
+    """Request model for single/targeted email"""
+    to: List[str]  # List of email addresses
+    subject: str
+    body: str
+    html: Optional[str] = None
+
+
+@router.post("/email/broadcast", response_model=BroadcastEmailResponse)
+def send_broadcast_email(
+    request: BroadcastEmailRequest,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /admin/email/broadcast
+    Send an email to all users (or test to admin only)
+    """
+    logger.info(f"Broadcast email initiated by {admin['email']}: {request.subject}")
+    
+    try:
+        from app.core.email_service import send_broadcast_to_all
+        
+        if request.test_mode:
+            # Test mode - only send to admin
+            recipients = [admin['email']]
+            logger.info(f"Test mode: sending only to {admin['email']}")
+        else:
+            # Get all users who haven't unsubscribed
+            users = db.query(User).filter(
+                (User.unsubscribed == False) | (User.unsubscribed == None)
+            ).all()
+            recipients = [u.email for u in users if u.email]
+            logger.info(f"Broadcasting to {len(recipients)} users")
+        
+        if not recipients:
+            return BroadcastEmailResponse(
+                success=False,
+                message="No recipients found",
+                total_recipients=0,
+                successful_sends=0,
+                failed_sends=0
+            )
+        
+        # Send the broadcast
+        result = send_broadcast_to_all(
+            subject=request.subject,
+            body=request.body,
+            html=request.html,
+            recipients=recipients
+        )
+        
+        return BroadcastEmailResponse(
+            success=result.get('success', False),
+            message=result.get('message', 'Broadcast completed'),
+            total_recipients=result.get('total', len(recipients)),
+            successful_sends=result.get('successful', 0),
+            failed_sends=result.get('failed', 0)
+        )
+        
+    except Exception as e:
+        logger.error(f"Broadcast email failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send broadcast: {str(e)}")
+
+
+@router.post("/email/send")
+def send_targeted_email(
+    request: SingleEmailRequest,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /admin/email/send
+    Send email to specific user(s)
+    """
+    logger.info(f"Targeted email by {admin['email']} to {request.to}: {request.subject}")
+    
+    try:
+        from app.core.email_service import send_email
+        
+        results = []
+        for email in request.to:
+            html_content = request.html or f"<p>{request.body}</p>"
+            result = send_email(
+                to=email,
+                subject=request.subject,
+                html=html_content,
+                tags=["admin-targeted"]
+            )
+            results.append({"email": email, "success": result is not None})
+        
+        successful = sum(1 for r in results if r['success'])
+        failed = len(results) - successful
+        
+        return {
+            "success": successful > 0,
+            "message": f"Sent to {successful}/{len(results)} recipients",
+            "results": results,
+            "successful": successful,
+            "failed": failed
+        }
+        
+    except Exception as e:
+        logger.error(f"Targeted email failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+@router.get("/email/stats")
+def get_email_stats(
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    GET /admin/email/stats
+    Get email delivery statistics
+    """
+    try:
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=7)
+        
+        # Count users by email preference status
+        total_users = db.query(User).count()
+        unsubscribed = db.query(User).filter(User.unsubscribed == True).count()
+        subscribed = total_users - unsubscribed
+        
+        # Count users who received emails recently
+        emailed_today = db.query(User).filter(
+            User.last_email_sent_at >= today_start
+        ).count()
+        emailed_this_week = db.query(User).filter(
+            User.last_email_sent_at >= week_start
+        ).count()
+        
+        return {
+            "total_users": total_users,
+            "subscribed_users": subscribed,
+            "unsubscribed_users": unsubscribed,
+            "emailed_today": emailed_today,
+            "emailed_this_week": emailed_this_week,
+            "email_reach_rate": round((subscribed / total_users * 100) if total_users > 0 else 0, 1)
+        }
+        
+    except Exception as e:
+        logger.warning(f"Error fetching email stats: {e}")
+        return {
+            "total_users": 0,
+            "subscribed_users": 0,
+            "unsubscribed_users": 0,
+            "emailed_today": 0,
+            "emailed_this_week": 0,
+            "email_reach_rate": 0
+        }

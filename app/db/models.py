@@ -54,6 +54,10 @@ class User(Base):
     total_xp = Column(Integer, default=0)  # Total experience points earned
     achievements_unlocked = Column(JSON, default=[])  # List of unlocked achievement IDs
     active_challenges = Column(JSON, default=[])  # Currently active challenge data
+    # Email Engagement System (v1.7)
+    last_email_sent_at = Column(DateTime, nullable=True)  # When we last sent them an email
+    email_preferences = Column(JSON, default={"marketing": True, "updates": True, "digest": True})
+    unsubscribed = Column(Boolean, default=False)  # Global email opt-out
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Profile(Base):

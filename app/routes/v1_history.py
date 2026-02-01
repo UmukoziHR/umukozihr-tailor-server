@@ -223,6 +223,24 @@ def mark_job_landed(
 
     logger.info(f"Job landed! User {user_id} got job at {job.company} as {job.title}")
 
+    # Send job landed celebration email
+    try:
+        from app.core.email_service import send_job_landed_email
+        # Get user's name from profile or email
+        profile = db.query(DBProfile).filter(DBProfile.user_id == user_uuid).first()
+        name = user.email.split("@")[0].replace(".", " ").title()
+        if profile and profile.profile_data:
+            name = profile.profile_data.get("basics", {}).get("name", name)
+        send_job_landed_email(
+            email=user.email,
+            name=name,
+            user_id=str(user.id),
+            company=job.company,
+            title=job.title
+        )
+    except Exception as email_error:
+        logger.warning(f"Failed to send job landed email: {email_error}")
+
     # Generate LinkedIn share content
     share_text = f"🎉 Excited to share that I've landed a new role as {job.title} at {job.company}! Thanks to everyone who supported my journey. #NewJob #CareerGrowth #Hired"
     linkedin_share_url = f"https://www.linkedin.com/sharing/share-offsite/?url=https://tailor.umukozihr.com&title={quote(share_text)}"
@@ -383,6 +401,24 @@ def mark_got_interview(
         ]
 
     logger.info(f"Interview received! User {user_id} got interview at {job.company} for {job.title}")
+
+    # Send interview celebration email
+    try:
+        from app.core.email_service import send_interview_celebration_email
+        # Get user's name from profile or email
+        profile = db.query(DBProfile).filter(DBProfile.user_id == user_uuid).first()
+        name = user.email.split("@")[0].replace(".", " ").title()
+        if profile and profile.profile_data:
+            name = profile.profile_data.get("basics", {}).get("name", name)
+        send_interview_celebration_email(
+            email=user.email,
+            name=name,
+            user_id=str(user.id),
+            company=job.company,
+            title=job.title
+        )
+    except Exception as email_error:
+        logger.warning(f"Failed to send interview celebration email: {email_error}")
 
     # Generate LinkedIn share content
     share_text = f"📞 Exciting news! I just got an interview call for {job.title} at {job.company}! The job hunt continues... #JobSearch #Interview #CareerProgress"

@@ -549,6 +549,27 @@ def generate(
                 "total_duration": round(total_duration, 2)
             }
         )
+        
+        # Send first generation email if this is user's first generation
+        try:
+            user_uuid = python_uuid.UUID(user_id)
+            total_user_runs = db.query(DBRun).filter(DBRun.user_id == user_uuid).count()
+            if total_user_runs <= len(request.jobs):  # First batch of generations
+                user = db.query(User).filter(User.id == user_uuid).first()
+                if user and job_results:
+                    from app.core.email_service import send_first_generation_email
+                    first_job = job_results[0]['job']
+                    name = user_name if user_name != "Resume_User" else user.email.split("@")[0].title()
+                    send_first_generation_email(
+                        email=user.email,
+                        name=name,
+                        user_id=str(user.id),
+                        company=first_job.company,
+                        title=first_job.title
+                    )
+                    logger.info(f"First generation email sent to: {user.email}")
+        except Exception as email_error:
+            logger.warning(f"Failed to send first generation email: {email_error}")
     
     zip_path = bundle_pdfs_only(run_id, user_name)
     logger.info(f"Document generation completed for run_id: {run_id}")

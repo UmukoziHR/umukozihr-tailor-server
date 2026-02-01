@@ -26,3 +26,5 @@ httpx
 cloudscraper
 curl_cffi
 Pillow
+resend
+apscheduler

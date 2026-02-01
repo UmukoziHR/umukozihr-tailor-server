@@ -78,6 +78,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Database migration on startup: {e}")
 
+    # Start email scheduler
+    try:
+        from app.queue.email_scheduler import start_scheduler
+        start_scheduler()
+        logger.info("Email scheduler started successfully")
+    except Exception as e:
+        logger.warning(f"Email scheduler failed to start: {e}")
+
     # Start self-ping background task
     ping_task = asyncio.create_task(self_ping_task())
 
@@ -85,6 +93,15 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down UmukoziHR Resume Tailor API v1.3")
+    
+    # Stop email scheduler
+    try:
+        from app.queue.email_scheduler import stop_scheduler
+        stop_scheduler()
+        logger.info("Email scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Email scheduler stop error: {e}")
+    
     ping_task.cancel()
     try:
         await ping_task

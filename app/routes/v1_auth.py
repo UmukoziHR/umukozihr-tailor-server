@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from app.db.database import get_db
 from app.db.models import User
-from app.auth.auth import hash_password, verify_password, create_access_token
+from app.auth.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.utils.analytics import track_event, EventType
 from app.core.subscription import is_african_user
 
@@ -196,6 +196,15 @@ def signup(req: SignupRequest, request: Request, db: Session = Depends(get_db)):
         logger.info(f"Generating access token for user: {user.id}")
         access_token = create_access_token({"sub": str(user.id)})
         logger.info(f"Access token generated successfully for user: {user.id}")
+
+        # Send welcome email (async, don't block response)
+        try:
+            from app.core.email_service import send_welcome_email
+            name = req.email.split("@")[0].replace(".", " ").title()
+            send_welcome_email(email=req.email, name=name, user_id=str(user.id))
+            logger.info(f"Welcome email sent to: {req.email}")
+        except Exception as email_error:
+            logger.warning(f"Failed to send welcome email: {email_error}")
 
         logger.info(f"=== SIGNUP SUCCESS === User ID: {user.id}, Email: {req.email}")
         return {
@@ -474,6 +483,15 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
                 event_data={"email": email, "provider": req.provider},
                 request=request
             )
+            
+            # Send welcome email for new OAuth users
+            try:
+                from app.core.email_service import send_welcome_email
+                name = email.split("@")[0].replace(".", " ").title()
+                send_welcome_email(email=email, name=name, user_id=str(user.id))
+                logger.info(f"Welcome email sent to OAuth user: {email}")
+            except Exception as email_error:
+                logger.warning(f"Failed to send welcome email to OAuth user: {email_error}")
         
         # Generate our backend token
         access_token = create_access_token({"sub": str(user.id)})
@@ -494,3 +512,112 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OAuth sync failed: {str(e)}"
         )
+
+
+# ============= Email Unsubscribe =============
+
+@router.get("/unsubscribe")
+def unsubscribe_from_emails(
+    user_id: str,
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    GET /api/v1/auth/unsubscribe?user_id=xxx&token=xxx
+    One-click unsubscribe from all marketing emails
+    """
+    from uuid import UUID
+    
+    logger.info(f"Unsubscribe request for user_id: {user_id}")
+    
+    try:
+        # Import verify function
+        from app.core.email_service import verify_unsubscribe_token
+        
+        # Verify the token
+        if not verify_unsubscribe_token(user_id, token):
+            logger.warning(f"Invalid unsubscribe token for user: {user_id}")
+            return {
+                "success": False,
+                "message": "Invalid or expired unsubscribe link. Please contact support."
+            }
+        
+        # Find the user
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            logger.warning(f"Invalid user_id format: {user_id}")
+            return {
+                "success": False,
+                "message": "Invalid user ID format."
+            }
+        
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            logger.warning(f"User not found for unsubscribe: {user_id}")
+            return {
+                "success": False,
+                "message": "User not found."
+            }
+        
+        # Mark user as unsubscribed
+        user.unsubscribed = True
+        user.email_preferences = {"marketing": False, "updates": False, "digest": False}
+        db.commit()
+        
+        logger.info(f"User {user.email} successfully unsubscribed from emails")
+        
+        # Return HTML page for better user experience
+        return {
+            "success": True,
+            "message": "You have been successfully unsubscribed from all UmukoziHR emails. You will no longer receive marketing or promotional emails from us.",
+            "email": user.email
+        }
+        
+    except Exception as e:
+        logger.error(f"Unsubscribe error: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": "An error occurred while processing your request. Please try again or contact support."
+        }
+
+
+@router.post("/resubscribe")
+def resubscribe_to_emails(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /api/v1/auth/resubscribe
+    Re-subscribe to emails (for logged-in users)
+    """
+    from uuid import UUID
+    
+    user_id = current_user["user_id"]
+    logger.info(f"Resubscribe request for user_id: {user_id}")
+    
+    try:
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        user = db.query(User).filter(User.id == user_uuid).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Re-subscribe user
+        user.unsubscribed = False
+        user.email_preferences = {"marketing": True, "updates": True, "digest": True}
+        db.commit()
+        
+        logger.info(f"User {user.email} re-subscribed to emails")
+        
+        return {
+            "success": True,
+            "message": "You have been re-subscribed to UmukoziHR emails."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resubscribe error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Resubscribe failed: {str(e)}")

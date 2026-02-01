@@ -252,6 +252,22 @@ def migrate_v1_2_to_v1_3(db):
                 migrations.append("ALTER TABLE users ADD COLUMN active_challenges JSONB DEFAULT '[]'")
             else:
                 migrations.append("ALTER TABLE users ADD COLUMN active_challenges TEXT DEFAULT '[]'")
+        
+        # v1.7 Email Engagement System columns
+        if 'last_email_sent_at' not in users_columns:
+            migrations.append("ALTER TABLE users ADD COLUMN last_email_sent_at TIMESTAMP")
+        
+        if 'email_preferences' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN email_preferences JSONB DEFAULT '{\"marketing\": true, \"updates\": true, \"digest\": true}'")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN email_preferences TEXT DEFAULT '{\"marketing\": true, \"updates\": true, \"digest\": true}'")
+        
+        if 'unsubscribed' not in users_columns:
+            if "postgresql" in str(engine.url):
+                migrations.append("ALTER TABLE users ADD COLUMN unsubscribed BOOLEAN DEFAULT FALSE")
+            else:
+                migrations.append("ALTER TABLE users ADD COLUMN unsubscribed INTEGER DEFAULT 0")
 
     # Execute migrations
     if migrations:
