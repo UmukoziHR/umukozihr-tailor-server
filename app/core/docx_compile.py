@@ -136,11 +136,11 @@ def create_resume_docx(profile: dict, resume_out: dict, job: dict, out_path: str
     contacts = profile.get('contacts', {})
     contact_parts = []
     if contacts.get('email'):
-        contact_parts.append(f"📧 {contacts['email']}")
+        contact_parts.append(contacts['email'])
     if contacts.get('phone'):
-        contact_parts.append(f"📱 {contacts['phone']}")
+        contact_parts.append(contacts['phone'])
     if contacts.get('location'):
-        contact_parts.append(f"📍 {contacts['location']}")
+        contact_parts.append(contacts['location'])
     
     if contact_parts:
         contact_para = doc.add_paragraph()
@@ -340,17 +340,17 @@ def create_cover_letter_docx(profile: dict, cover_letter_out: dict, job: dict, o
     # Contact details
     if contacts.get('email'):
         email_para = doc.add_paragraph()
-        email_para.add_run(f"📧 {contacts['email']}")
+        email_para.add_run(contacts['email'])
         email_para.paragraph_format.space_after = Pt(0)
     
     if contacts.get('phone'):
         phone_para = doc.add_paragraph()
-        phone_para.add_run(f"📱 {contacts['phone']}")
+        phone_para.add_run(contacts['phone'])
         phone_para.paragraph_format.space_after = Pt(0)
     
     if contacts.get('location'):
         loc_para = doc.add_paragraph()
-        loc_para.add_run(f"📍 {contacts['location']}")
+        loc_para.add_run(contacts['location'])
     
     # Separator
     hr_para = doc.add_paragraph()
