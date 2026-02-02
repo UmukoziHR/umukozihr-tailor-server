@@ -15,8 +15,9 @@ from typing import List, Tuple
 APP_URL = os.getenv("APP_URL", "https://tailor.umukozihr.com")
 
 
-def _base_template(content: str, include_unsubscribe: bool = True) -> str:
+def _base_template(content: str, include_unsubscribe: bool = False) -> str:
     """Base HTML email template with UmukoziHR branding"""
+    # NOTE: Unsubscribe temporarily disabled - set include_unsubscribe=True to re-enable
     unsubscribe_section = ""
     if include_unsubscribe:
         unsubscribe_section = """
