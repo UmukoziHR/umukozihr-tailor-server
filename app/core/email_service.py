@@ -304,7 +304,7 @@ def send_broadcast_to_all(
             </div>
             <div style="padding: 20px; background: #f8f9fa; text-align: center;">
                 <p style="color: #666; font-size: 12px; margin: 0;">
-                    © 2024 UmukoziHR. All rights reserved.
+                    © 2026 UmukoziHR. All rights reserved.
                 </p>
             </div>
         </div>
