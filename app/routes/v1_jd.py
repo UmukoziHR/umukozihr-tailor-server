@@ -528,35 +528,62 @@ def fetch_via_jina_reader(url: str) -> dict:
         
         text = response.text
         
-        # Extract title from first line if it looks like a title
+        # Clean up Jina Reader artifacts
+        # Jina sometimes adds "Markdown Content:" or "Title:" headers
         lines = text.strip().split('\n')
+        cleaned_lines = []
+        skip_patterns = ['markdown content', 'title:', 'url source:']
+        for line in lines:
+            line_lower = line.strip().lower()
+            # Skip Jina Reader metadata lines
+            if any(line_lower.startswith(p) or line_lower == p.rstrip(':') for p in skip_patterns):
+                continue
+            cleaned_lines.append(line)
+        
+        text = '\n'.join(cleaned_lines)
+        lines = text.strip().split('\n')
+        
         title = None
         company = None
         
         # Try to find title and company from the text
-        for i, line in enumerate(lines[:10]):
+        # Skip common garbage words that aren't actual job titles
+        garbage_titles = ['linkedin', 'indeed', 'glassdoor', 'jobs', 'careers', 'markdown content',
+                          'sign in', 'log in', 'join now', 'skip to main']
+        for i, line in enumerate(lines[:15]):
             line = line.strip()
             if not title and len(line) > 5 and len(line) < 100:
                 # First meaningful line is often the title
                 if not line.startswith(('http', '#', '!', '[')):
-                    title = line
-                    break
+                    # Skip if it's a garbage title
+                    if line.lower() not in garbage_titles and not any(g in line.lower() for g in garbage_titles):
+                        title = line
+                        break
         
-        # Try to extract company from URL
+        # For LinkedIn URLs, do NOT use domain as company - it will be "Linkedin" which is wrong
         parsed = urlparse(url)
-        domain_parts = parsed.netloc.split('.')
-        if 'jobs' in domain_parts:
-            domain_parts.remove('jobs')
-        if 'www' in domain_parts:
-            domain_parts.remove('www')
-        if domain_parts:
-            company = domain_parts[0].replace('-', ' ').title()
+        domain_lower = parsed.netloc.lower()
+        
+        # Only extract company from domain for non-job-board sites
+        job_board_domains = ['linkedin', 'indeed', 'glassdoor', 'monster', 'ziprecruiter', 
+                             'dice', 'simplyhired', 'careerbuilder', 'jora']
+        
+        is_job_board = any(jb in domain_lower for jb in job_board_domains)
+        
+        if not is_job_board:
+            domain_parts = parsed.netloc.split('.')
+            if 'jobs' in domain_parts:
+                domain_parts.remove('jobs')
+            if 'www' in domain_parts:
+                domain_parts.remove('www')
+            if domain_parts:
+                company = domain_parts[0].replace('-', ' ').title()
         
         if len(text) > 200:
             return {
                 'success': True,
                 'title': title,
-                'company': company,
+                'company': company,  # Will be None for LinkedIn, user must fill it
                 'jd_text': text,
                 'region': detect_region(text[:500])
             }
@@ -896,7 +923,8 @@ def fetch_jd(request: JDFetchRequest):
             title_lower = title.lower()
             garbage_title_patterns = ['just a moment', 'access denied', 'page not found', 
                                        '404', '403', 'error', 'cloudflare', 'captcha',
-                                       'checking your browser', 'security check']
+                                       'checking your browser', 'security check', 'markdown content',
+                                       'sign in', 'log in', 'linkedin', 'indeed', 'glassdoor']
             for pattern in garbage_title_patterns:
                 if pattern in title_lower:
                     logger.warning(f"Garbage title detected: '{title}'")
