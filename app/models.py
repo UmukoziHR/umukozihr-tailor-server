@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, field_validator
 from typing import List, Optional, Literal, Dict
 from datetime import datetime
 
@@ -34,6 +34,14 @@ class Education(BaseModel):
     start: Optional[str] = ""
     end: Optional[str] = ""
     gpa: Optional[str] = None
+
+    @field_validator("school", "degree", "start", "end", mode="before")
+    @classmethod
+    def normalize_nullable_text_fields(cls, value):
+        """Allow null-like upstream values and store them as empty strings."""
+        if value is None:
+            return ""
+        return value
 
 class Project(BaseModel):
     name: str

@@ -233,23 +233,23 @@ def map_linkedin_to_profile_v3(linkedin_data: Dict[str, Any]) -> Dict[str, Any]:
         
         start_info = edu.get("startDate", {})
         if isinstance(start_info, dict):
-            start_year = str(start_info.get("year", ""))
+            start_year = _safe_str(start_info.get("year", ""))
         
         end_info = edu.get("endDate", {})
         if isinstance(end_info, dict):
-            end_year = str(end_info.get("year", ""))
+            end_year = _safe_str(end_info.get("year", ""))
         
         # Combine degree and field of study
-        degree = edu.get("degree", "")
-        field = edu.get("fieldOfStudy", "")
+        degree = _safe_str(edu.get("degree", ""))
+        field = _safe_str(edu.get("fieldOfStudy", ""))
         full_degree = f"{degree} in {field}" if degree and field else (degree or field)
         
         education.append({
-            "school": edu.get("schoolName", ""),
+            "school": _safe_str(edu.get("schoolName", "")),
             "degree": full_degree,
             "start": start_year,
             "end": end_year,
-            "gpa": edu.get("grade", None)
+            "gpa": _safe_str(edu.get("grade")) or None
         })
     
     # Skills - extract from topSkills, skills array, and experience skills
@@ -428,3 +428,12 @@ def _month_to_num(month_str: str) -> str:
     }
     month_lower = month_str.lower()[:3]
     return months.get(month_lower, "01")
+
+
+def _safe_str(value: Any) -> str:
+    """Convert external data values to safe strings without leaking 'None' text."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
