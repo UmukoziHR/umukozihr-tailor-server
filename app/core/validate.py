@@ -69,6 +69,16 @@ def extract_years_from_date(date_str: str) -> set:
     return set(re.findall(r'\b(19|20)\d{2}\b', date_str))
 
 
+def normalize_company_name(name: str) -> str:
+    """Normalize company names to prevent false mismatches from formatting differences."""
+    if not name:
+        return ""
+
+    normalized = name.casefold().replace("&", " and ").replace("_", " ")
+    normalized = re.sub(r"[^\w]+", " ", normalized, flags=re.UNICODE)
+    return " ".join(normalized.split())
+
+
 def business_rules_check(data:dict, profile:Profile):
     """Validate LLM output against profile data.
     
@@ -78,9 +88,20 @@ def business_rules_check(data:dict, profile:Profile):
     3. No duplicate bullet points
     """
     # 1. Company/title safety: must be subset of profile companies (or blank)
-    prof_companies = {r.company for r in profile.experience}
+    prof_companies = {r.company for r in profile.experience if r.company}
+    prof_companies_normalized = {
+        normalize_company_name(company) for company in prof_companies
+    }
+
     for r in data["resume"]["experience"]:
-        if r["company"] and r["company"] not in prof_companies:
+        company = (r.get("company") or "").strip()
+        if not company:
+            continue
+
+        if company in prof_companies:
+            continue
+
+        if normalize_company_name(company) not in prof_companies_normalized:
             raise ValueError(f"company not in profile: {r['company']}")
     
     # 2. Date validation: years in output must exist in profile dates
