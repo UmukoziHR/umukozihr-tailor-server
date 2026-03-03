@@ -10,6 +10,7 @@ import uuid as python_uuid
 
 from app.models import GenerateRequest, Profile, ProfileV3
 from app.core.tailor import run_tailor, detect_region_from_jd
+from app.core.llm import LLMServiceError, LLMRateLimitError, LLMQuotaExceededError
 from app.core.tex_compile import render_tex, compile_tex, bundle_pdfs_only
 from app.core.docx_compile import render_docx
 from app.db.database import get_db
@@ -26,6 +27,50 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)
+
+
+def _to_generation_http_exception(exc: Exception, company: Optional[str] = None) -> HTTPException:
+    """Map internal LLM/provider failures to stable API statuses."""
+    if isinstance(exc, HTTPException):
+        return exc
+
+    context = f" for {company}" if company else ""
+
+    if isinstance(exc, LLMQuotaExceededError):
+        return HTTPException(
+            status_code=429,
+            detail=f"LLM quota exceeded{context}: {exc}",
+            headers={"Retry-After": "60"},
+        )
+    if isinstance(exc, LLMRateLimitError):
+        return HTTPException(
+            status_code=429,
+            detail=f"LLM rate limited{context}: {exc}",
+            headers={"Retry-After": "30"},
+        )
+    if isinstance(exc, LLMServiceError):
+        return HTTPException(
+            status_code=502,
+            detail=f"LLM provider error{context}: {exc}",
+        )
+
+    return HTTPException(status_code=400, detail=f"LLM/validation error{context}: {exc}")
+
+
+def _resolve_max_workers(job_count: int) -> int:
+    """
+    Bound concurrent LLM requests to avoid quota/rate-limit bursts.
+    Set via GENERATION_MAX_WORKERS (default 3, hard max 10).
+    """
+    raw = os.getenv("GENERATION_MAX_WORKERS", "3")
+    try:
+        configured = int(raw)
+    except ValueError:
+        logger.warning(f"Invalid GENERATION_MAX_WORKERS='{raw}', defaulting to 3")
+        configured = 3
+
+    configured = max(1, min(configured, 10))
+    return min(job_count, configured)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     """Optional auth - returns user_id if authenticated, None otherwise"""
@@ -270,7 +315,7 @@ def run_generation_for_job(db: Session, user_id: str, job: DBJob, profile_data: 
         logger.info(f"LLM processing completed for job: {job.title}")
     except Exception as e:
         logger.error(f"LLM/validation error for job {job.title}: {e}")
-        raise HTTPException(400, f"LLM/validation error: {e}")
+        raise _to_generation_http_exception(e, job.company)
 
     # Render and compile
     base = f"{run_id}_{job.title.replace(' ', '_')}"
@@ -419,8 +464,9 @@ def generate(
     logger.info(f"Starting CONCURRENT processing of {len(request.jobs)} jobs")
     
     # Use ThreadPoolExecutor for concurrent I/O-bound operations (LLM calls)
-    # This is the key for making 10 jobs feel fast - they all process simultaneously
-    max_workers = min(len(request.jobs), 10)  # Max 10 concurrent LLM calls
+    # Keep concurrency bounded to reduce provider quota/rate-limit spikes.
+    max_workers = _resolve_max_workers(len(request.jobs))
+    logger.info(f"Using max_workers={max_workers} for {len(request.jobs)} job(s)")
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all jobs at once
@@ -466,7 +512,7 @@ def generate(
                         user_id=user_id,
                         event_data={"job_title": request.jobs[idx].title, "company": request.jobs[idx].company, "error": str(e)}
                     )
-                raise HTTPException(400, f"LLM/validation error for {request.jobs[idx].company}: {e}")
+                raise _to_generation_http_exception(e, request.jobs[idx].company)
     
     # Sort results by original index to maintain order
     job_results.sort(key=lambda x: x['idx'])

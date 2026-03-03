@@ -66,6 +66,13 @@ Create a `.env` file in the server directory:
 # Required: Google Gemini API Key
 GEMINI_API_KEY=your_gemini_api_key_here
 
+# Optional: LLM tuning (recommended for quota control)
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_FALLBACK_MODEL=gemini-2.5-flash
+GEMINI_MAX_OUTPUT_TOKENS=8192
+GEMINI_THINKING_BUDGET=0
+GENERATION_MAX_WORKERS=3
+
 # Optional: Authentication (defaults provided)
 SECRET_KEY=your-secret-key-here
 ACCESS_TOKEN_EXPIRE_MINUTES=30

@@ -154,6 +154,8 @@ def regenerate_run(
         )
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         logger.error(f"Regeneration failed: {e}")
         raise HTTPException(
             status_code=500,

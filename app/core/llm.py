@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from typing import Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai.types import Tool, Schema, GenerateContentConfig, ThinkingConfig
@@ -8,6 +9,105 @@ from google.genai.types import Tool, Schema, GenerateContentConfig, ThinkingConf
 # Load environment variables
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+
+class LLMServiceError(RuntimeError):
+    """Base class for upstream LLM provider failures."""
+
+    def __init__(self, message: str, status_code: int = 502, retryable: bool = False):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
+
+
+class LLMRateLimitError(LLMServiceError):
+    """Raised when provider rate limiting is detected."""
+
+
+class LLMQuotaExceededError(LLMServiceError):
+    """Raised when provider quota exhaustion is detected."""
+
+
+class LLMProviderError(LLMServiceError):
+    """Raised for generic upstream provider errors."""
+
+
+def _read_int_env(name: str, default: int, min_value: Optional[int] = None, max_value: Optional[int] = None) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(f"Invalid integer in {name}='{raw}', falling back to {default}")
+        return default
+
+    if min_value is not None and value < min_value:
+        logger.warning(f"{name}={value} is below minimum {min_value}, clamping")
+        value = min_value
+    if max_value is not None and value > max_value:
+        logger.warning(f"{name}={value} exceeds maximum {max_value}, clamping")
+        value = max_value
+    return value
+
+
+def _read_float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(f"Invalid float in {name}='{raw}', falling back to {default}")
+        return default
+
+
+def classify_llm_exception(exc: Exception) -> Optional[LLMServiceError]:
+    """Normalize provider/SDK exceptions into stable internal errors."""
+    message = str(exc) or exc.__class__.__name__
+    upper = message.upper()
+
+    status_code = None
+    for attr in ("status_code", "http_status", "status", "code"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            status_code = value
+            break
+        if isinstance(value, str) and value.isdigit():
+            status_code = int(value)
+            break
+
+    quota_markers = [
+        "RESOURCE_EXHAUSTED",
+        "EXCEEDED YOUR CURRENT QUOTA",
+        "QUOTA",
+        "BILLING",
+    ]
+    if any(marker in upper for marker in quota_markers):
+        return LLMQuotaExceededError(
+            "AI provider quota exceeded. Please retry later or update Gemini plan/billing.",
+            status_code=429,
+            retryable=True,
+        )
+
+    rate_markers = ["RATE LIMIT", "TOO MANY REQUESTS"]
+    if status_code == 429 or any(marker in upper for marker in rate_markers):
+        return LLMRateLimitError(
+            "AI provider rate limit reached. Please retry in a moment.",
+            status_code=429,
+            retryable=True,
+        )
+
+    if status_code in (500, 502, 503, 504):
+        return LLMProviderError(
+            "AI provider is temporarily unavailable. Please retry shortly.",
+            status_code=502,
+            retryable=True,
+        )
+
+    return None
 
 
 SYSTEM = (
@@ -147,7 +247,7 @@ def build_user_prompt(
         f"11. Return ONLY valid JSON matching the schema."
     )
 
-def call_llm(prompt:str)->str:
+def call_llm(prompt: str) -> str:
     logger.info(f"=== LLM CALL START ===")
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -163,29 +263,63 @@ def call_llm(prompt:str)->str:
         client = genai.Client(api_key=api_key)
         logger.info(f"Gemini client created successfully")
 
-        # MAXED OUT: Using maximum output tokens for comprehensive resume generation
-        # Gemini 2.5 Pro supports up to 65,536 output tokens - using 64k to be safe
-        # Enable thinking mode for enhanced reasoning (budget: max 32768 tokens)
-        logger.info(f"Configuring generation settings: model=gemini-2.5-pro, temp=0.2, max_tokens=65536, thinking_budget=32768")
-        cfg = GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=OUTPUT_JSON_SCHEMA,
-            temperature=0.2,
-            top_p=0.9,
-            candidate_count=1,
-            max_output_tokens=65536,  # MAXED: Full 64k output capacity
-            thinking_config=ThinkingConfig(
-                thinking_budget=32768  # MAXED: Full reasoning capacity
-            ),
+        # Keep model and token budget configurable to control quota burn in production.
+        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash").strip()
+        temperature = _read_float_env("GEMINI_TEMPERATURE", 0.2)
+        top_p = _read_float_env("GEMINI_TOP_P", 0.9)
+        max_output_tokens = _read_int_env("GEMINI_MAX_OUTPUT_TOKENS", 8192, min_value=512, max_value=65536)
+        thinking_budget = _read_int_env("GEMINI_THINKING_BUDGET", 0, min_value=0, max_value=32768)
+
+        logger.info(
+            "Configuring generation settings: "
+            f"model={model_name}, fallback_model={fallback_model}, temp={temperature}, "
+            f"max_tokens={max_output_tokens}, thinking_budget={thinking_budget}"
         )
 
-        logger.info(f"Sending request to Gemini API...")
-        response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=[f"{SYSTEM}\n\n{prompt}"],
-            config=cfg,
+        cfg_kwargs = dict(
+            response_mime_type="application/json",
+            response_schema=OUTPUT_JSON_SCHEMA,
+            temperature=temperature,
+            top_p=top_p,
+            candidate_count=1,
+            max_output_tokens=max_output_tokens,
         )
-        logger.info(f"Gemini API call completed, processing response...")
+        if thinking_budget > 0:
+            cfg_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+
+        cfg = GenerateContentConfig(**cfg_kwargs)
+
+        logger.info(f"Sending request to Gemini API (primary model={model_name})...")
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[f"{SYSTEM}\n\n{prompt}"],
+                config=cfg,
+            )
+            active_model = model_name
+        except Exception as primary_error:
+            classified_primary = classify_llm_exception(primary_error)
+            can_fallback = (
+                fallback_model
+                and fallback_model != model_name
+                and isinstance(classified_primary, (LLMQuotaExceededError, LLMRateLimitError))
+            )
+            if not can_fallback:
+                raise primary_error
+
+            logger.warning(
+                f"Primary model '{model_name}' failed with {type(classified_primary).__name__}; "
+                f"retrying once with fallback model '{fallback_model}'"
+            )
+            response = client.models.generate_content(
+                model=fallback_model,
+                contents=[f"{SYSTEM}\n\n{prompt}"],
+                config=cfg,
+            )
+            active_model = fallback_model
+
+        logger.info(f"Gemini API call completed using model={active_model}, processing response...")
 
         # Log detailed response information for debugging
         logger.debug(f"LLM response object type: {type(response)}")
@@ -226,4 +360,11 @@ def call_llm(prompt:str)->str:
         logger.error(f"=== LLM CALL ERROR === {str(e)}", exc_info=True)
         logger.error(f"Exception type: {type(e).__name__}")
         logger.error(f"Prompt that caused error (first 500 chars): {prompt[:500]}")
+        classified = classify_llm_exception(e)
+        if classified:
+            logger.error(
+                f"Mapped provider error -> {type(classified).__name__} "
+                f"(status={classified.status_code}, retryable={classified.retryable})"
+            )
+            raise classified from e
         raise
