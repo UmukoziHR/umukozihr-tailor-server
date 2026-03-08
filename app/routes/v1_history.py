@@ -159,7 +159,7 @@ def regenerate_run(
         logger.error(f"Regeneration failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Regeneration failed: {str(e)}"
+            detail="We could not regenerate your documents right now. Please try again."
         )
 
 

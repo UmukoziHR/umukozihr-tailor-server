@@ -1,7 +1,9 @@
 import os
+import re
 import json
+import math
 import logging
-from typing import Optional
+from typing import Any, Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai.types import Tool, Schema, GenerateContentConfig, ThinkingConfig
@@ -14,10 +16,17 @@ logger = logging.getLogger(__name__)
 class LLMServiceError(RuntimeError):
     """Base class for upstream LLM provider failures."""
 
-    def __init__(self, message: str, status_code: int = 502, retryable: bool = False):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 502,
+        retryable: bool = False,
+        retry_after_seconds: Optional[int] = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.retryable = retryable
+        self.retry_after_seconds = retry_after_seconds
 
 
 class LLMRateLimitError(LLMServiceError):
@@ -64,32 +73,107 @@ def _read_float_env(name: str, default: float) -> float:
         return default
 
 
+def _coerce_int(value: Any) -> Optional[int]:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _extract_status_code(exc: Exception) -> Optional[int]:
+    for attr in ("status_code", "http_status", "status", "code"):
+        coerced = _coerce_int(getattr(exc, attr, None))
+        if coerced is not None:
+            return coerced
+    return None
+
+
+def _find_nested_value(payload: Any, keys: set[str]) -> Optional[Any]:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in keys:
+                return value
+            nested = _find_nested_value(value, keys)
+            if nested is not None:
+                return nested
+    elif isinstance(payload, list):
+        for item in payload:
+            nested = _find_nested_value(item, keys)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _parse_retry_after_seconds(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        return max(1, math.ceil(float(value)))
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return max(1, int(stripped))
+
+        match = re.search(
+            r"([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|secs|second|seconds)\b",
+            stripped,
+            re.IGNORECASE,
+        )
+        if match:
+            return max(1, math.ceil(float(match.group(1))))
+
+    return None
+
+
+def _extract_retry_after_seconds(exc: Exception, message: str) -> Optional[int]:
+    for attr in ("retry_after_seconds", "retry_after"):
+        parsed = _parse_retry_after_seconds(getattr(exc, attr, None))
+        if parsed is not None:
+            return parsed
+
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers:
+        parsed = _parse_retry_after_seconds(headers.get("retry-after") or headers.get("Retry-After"))
+        if parsed is not None:
+            return parsed
+
+    for attr in ("details", "response_json"):
+        payload = getattr(exc, attr, None)
+        nested_value = _find_nested_value(payload, {"retryDelay", "retryAfter", "retry_after"})
+        parsed = _parse_retry_after_seconds(nested_value)
+        if parsed is not None:
+            return parsed
+
+    return _parse_retry_after_seconds(message)
+
+
 def classify_llm_exception(exc: Exception) -> Optional[LLMServiceError]:
     """Normalize provider/SDK exceptions into stable internal errors."""
     message = str(exc) or exc.__class__.__name__
     upper = message.upper()
-
-    status_code = None
-    for attr in ("status_code", "http_status", "status", "code"):
-        value = getattr(exc, attr, None)
-        if isinstance(value, int):
-            status_code = value
-            break
-        if isinstance(value, str) and value.isdigit():
-            status_code = int(value)
-            break
+    status_code = _extract_status_code(exc)
+    retry_after_seconds = _extract_retry_after_seconds(exc, message)
 
     quota_markers = [
         "RESOURCE_EXHAUSTED",
         "EXCEEDED YOUR CURRENT QUOTA",
         "QUOTA",
         "BILLING",
+        "FREE TIER",
+        "PER DAY",
     ]
     if any(marker in upper for marker in quota_markers):
         return LLMQuotaExceededError(
-            "AI provider quota exceeded. Please retry later or update Gemini plan/billing.",
+            "AI provider quota exceeded. Please retry later, switch to an available model, or update Gemini plan/billing.",
             status_code=429,
             retryable=True,
+            retry_after_seconds=retry_after_seconds,
         )
 
     rate_markers = ["RATE LIMIT", "TOO MANY REQUESTS"]
@@ -98,6 +182,7 @@ def classify_llm_exception(exc: Exception) -> Optional[LLMServiceError]:
             "AI provider rate limit reached. Please retry in a moment.",
             status_code=429,
             retryable=True,
+            retry_after_seconds=retry_after_seconds,
         )
 
     if status_code in (500, 502, 503, 504):
@@ -105,6 +190,7 @@ def classify_llm_exception(exc: Exception) -> Optional[LLMServiceError]:
             "AI provider is temporarily unavailable. Please retry shortly.",
             status_code=502,
             retryable=True,
+            retry_after_seconds=retry_after_seconds,
         )
 
     return None

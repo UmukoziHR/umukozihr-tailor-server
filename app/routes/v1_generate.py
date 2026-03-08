@@ -10,7 +10,12 @@ import uuid as python_uuid
 
 from app.models import GenerateRequest, Profile, ProfileV3
 from app.core.tailor import run_tailor, detect_region_from_jd
-from app.core.llm import LLMServiceError, LLMRateLimitError, LLMQuotaExceededError
+from app.core.llm import (
+    LLMServiceError,
+    LLMRateLimitError,
+    LLMQuotaExceededError,
+    classify_llm_exception,
+)
 from app.core.tex_compile import render_tex, compile_tex, bundle_pdfs_only
 from app.core.docx_compile import render_docx
 from app.db.database import get_db
@@ -29,32 +34,63 @@ router = APIRouter()
 security = HTTPBearer(auto_error=False)
 
 
+def _generation_user_message(
+    retry_after_seconds: Optional[int] = None,
+    retryable: bool = True,
+) -> str:
+    if retryable:
+        if retry_after_seconds:
+            return (
+                "We are temporarily unable to generate your documents. "
+                f"Please try again in about {retry_after_seconds} seconds."
+            )
+        return "We are temporarily unable to generate your documents. Please try again shortly."
+    return "We could not finish generating your documents. Please try again."
+
+
 def _to_generation_http_exception(exc: Exception, company: Optional[str] = None) -> HTTPException:
     """Map internal LLM/provider failures to stable API statuses."""
     if isinstance(exc, HTTPException):
         return exc
 
-    context = f" for {company}" if company else ""
+    classified = exc if isinstance(exc, LLMServiceError) else classify_llm_exception(exc)
+    if classified:
+        exc = classified
 
     if isinstance(exc, LLMQuotaExceededError):
+        headers = {}
+        if exc.retry_after_seconds:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
         return HTTPException(
             status_code=429,
-            detail=f"LLM quota exceeded{context}: {exc}",
-            headers={"Retry-After": "60"},
+            detail=_generation_user_message(
+                retry_after_seconds=exc.retry_after_seconds,
+                retryable=True,
+            ),
+            headers=headers or None,
         )
     if isinstance(exc, LLMRateLimitError):
+        headers = {}
+        if exc.retry_after_seconds:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
         return HTTPException(
             status_code=429,
-            detail=f"LLM rate limited{context}: {exc}",
-            headers={"Retry-After": "30"},
+            detail=_generation_user_message(
+                retry_after_seconds=exc.retry_after_seconds,
+                retryable=True,
+            ),
+            headers=headers or None,
         )
     if isinstance(exc, LLMServiceError):
         return HTTPException(
             status_code=502,
-            detail=f"LLM provider error{context}: {exc}",
+            detail=_generation_user_message(retryable=True),
         )
 
-    return HTTPException(status_code=400, detail=f"LLM/validation error{context}: {exc}")
+    return HTTPException(
+        status_code=400,
+        detail=_generation_user_message(retryable=False),
+    )
 
 
 def _resolve_max_workers(job_count: int) -> int:
