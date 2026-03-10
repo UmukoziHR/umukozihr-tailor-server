@@ -3,6 +3,7 @@ import httpx
 import os
 import jwt
 import base64
+import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
@@ -126,6 +127,10 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
 @router.post("/signup")
 def signup(req: SignupRequest, request: Request, db: Session = Depends(get_db)):
     logger.info(f"=== SIGNUP START === Email: {req.email}")
@@ -197,19 +202,25 @@ def signup(req: SignupRequest, request: Request, db: Session = Depends(get_db)):
         access_token = create_access_token({"sub": str(user.id)})
         logger.info(f"Access token generated successfully for user: {user.id}")
 
-        # Send welcome email (async, don't block response)
+        # Send verification email (async, don't block response)
         try:
-            from app.core.email_service import send_welcome_email
+            from app.core.email_service import send_verification_email
             name = req.email.split("@")[0].replace(".", " ").title()
-            send_welcome_email(email=req.email, name=name, user_id=str(user.id))
-            logger.info(f"Welcome email sent to: {req.email}")
+            send_verification_email(email=req.email, name=name, user_id=str(user.id))
+            user.last_email_sent_at = datetime.utcnow()
+            db.commit()
+            track_event(db=db, event_type=EventType.VERIFICATION_EMAIL_SENT,
+                        user_id=str(user.id), event_data={"email": req.email})
+            logger.info(f"Verification email sent to: {req.email}")
         except Exception as email_error:
-            logger.warning(f"Failed to send welcome email: {email_error}")
+            logger.warning(f"Failed to send verification email: {email_error}")
 
         logger.info(f"=== SIGNUP SUCCESS === User ID: {user.id}, Email: {req.email}")
         return {
             "access_token": access_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "is_verified": False,
+            "message": "Account created. Please verify your email before generating documents."
         }
     except HTTPException:
         raise
@@ -272,7 +283,8 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
         logger.info(f"=== LOGIN SUCCESS === User ID: {user.id}, Email: {req.email}")
         return {
             "access_token": access_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "is_verified": bool(user.is_verified)
         }
     except HTTPException:
         raise
@@ -501,7 +513,8 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
             "access_token": access_token,
             "token_type": "bearer",
             "user_id": str(user.id),
-            "is_new_user": user.created_at and (datetime.utcnow() - user.created_at).seconds < 60
+            "is_new_user": user.created_at and (datetime.utcnow() - user.created_at).seconds < 60,
+            "is_verified": True,
         }
         
     except HTTPException:
@@ -512,6 +525,115 @@ def oauth_sync(req: OAuthSyncRequest, request: Request, db: Session = Depends(ge
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OAuth sync failed: {str(e)}"
         )
+
+
+@router.get("/verify-email")
+def verify_email(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    GET /api/v1/auth/verify-email?token=...
+    Verify a local email/password account.
+    """
+    try:
+        from app.core.email_service import send_welcome_email, verify_email_verification_token
+
+        payload = verify_email_verification_token(token)
+        if not payload:
+            raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        if not user_id or not email:
+            raise HTTPException(status_code=400, detail="Invalid verification token")
+
+        try:
+            user_uuid = uuid.UUID(user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid verification token") from exc
+
+        user = db.query(User).filter(User.id == user_uuid).first()
+        if not user or user.email != email:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if user.auth_provider != "email":
+            return {"success": True, "message": "This account does not require email verification."}
+
+        if user.is_verified:
+            return {"success": True, "message": "Your email is already verified."}
+
+        user.is_verified = True
+        db.commit()
+
+        try:
+            name = user.email.split("@")[0].replace(".", " ").title()
+            send_welcome_email(email=user.email, name=name, user_id=str(user.id))
+        except Exception as email_error:
+            logger.warning(f"Failed to send welcome email after verification: {email_error}")
+
+        return {"success": True, "message": "Email verified successfully. You can now generate documents."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Email verification failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Email verification failed")
+
+
+@router.post("/verify-email")
+def verify_email_from_body(
+    req: VerifyEmailRequest,
+    db: Session = Depends(get_db)
+):
+    return verify_email(token=req.token, db=db)
+
+
+@router.post("/resend-verification")
+def resend_verification(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /api/v1/auth/resend-verification
+    Re-send verification email for local auth users.
+    """
+    user_id = current_user["user_id"]
+
+    try:
+        from app.core.email_service import send_verification_email
+
+        user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if user.auth_provider != "email":
+            return {"success": True, "message": "This account does not require email verification."}
+
+        if user.is_verified:
+            return {"success": True, "message": "Your email is already verified."}
+
+        # Rate limit: 1 resend per 10 minutes
+        if user.last_email_sent_at:
+            elapsed = (datetime.utcnow() - user.last_email_sent_at).total_seconds()
+            if elapsed < 600:
+                wait = int(600 - elapsed)
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Please wait {wait} seconds before requesting another verification email."
+                )
+
+        name = user.email.split("@")[0].replace(".", " ").title()
+        send_verification_email(email=user.email, name=name, user_id=str(user.id))
+        user.last_email_sent_at = datetime.utcnow()
+        db.commit()
+        track_event(db=db, event_type=EventType.VERIFICATION_EMAIL_SENT,
+                    user_id=str(user.id), event_data={"email": user.email, "resend": True})
+        return {"success": True, "message": "Verification email sent."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not resend verification email")
 
 
 # ============= Email Unsubscribe =============

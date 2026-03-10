@@ -14,11 +14,15 @@ import os
 import logging
 import hashlib
 import hmac
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
-import resend
+try:
+    import resend
+except ImportError:  # pragma: no cover - optional local dependency
+    resend = None
+from jose import JWTError, jwt
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +31,14 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "UmukoziHR <notifications@umukozihr.com>")
 UNSUBSCRIBE_SECRET = os.getenv("UNSUBSCRIBE_SECRET", "umukozihr-unsubscribe-2024")
 APP_URL = os.getenv("APP_URL", "https://tailor.umukozihr.com")
+EMAIL_VERIFICATION_SECRET = os.getenv("EMAIL_VERIFICATION_SECRET", UNSUBSCRIBE_SECRET)
+EMAIL_VERIFICATION_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_EXPIRE_HOURS", "48"))
 
-if RESEND_API_KEY:
+if RESEND_API_KEY and resend is not None:
     resend.api_key = RESEND_API_KEY
     logger.info("Resend API initialized")
 else:
-    logger.warning("RESEND_API_KEY not set - emails will not be sent")
+    logger.warning("Resend is unavailable or RESEND_API_KEY not set - emails will not be sent")
 
 
 def generate_unsubscribe_token(user_id: str) -> str:
@@ -51,6 +57,30 @@ def get_unsubscribe_url(user_id: str) -> str:
     """Get the unsubscribe URL for a user"""
     token = generate_unsubscribe_token(user_id)
     return f"{APP_URL}/api/v1/auth/unsubscribe?user_id={user_id}&token={token}"
+
+
+def generate_email_verification_token(user_id: str, email: str) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "purpose": "email_verification",
+        "exp": datetime.utcnow() + timedelta(hours=EMAIL_VERIFICATION_EXPIRE_HOURS),
+    }
+    return jwt.encode(payload, EMAIL_VERIFICATION_SECRET, algorithm="HS256")
+
+
+def verify_email_verification_token(token: str) -> Optional[Dict[str, Any]]:
+    try:
+        payload = jwt.decode(token, EMAIL_VERIFICATION_SECRET, algorithms=["HS256"])
+        if payload.get("purpose") != "email_verification":
+            return None
+        return payload
+    except JWTError:
+        return None
+
+
+def get_email_verification_url(token: str) -> str:
+    return f"{APP_URL}/auth/verify?token={token}"
 
 
 def send_email(
@@ -75,7 +105,7 @@ def send_email(
     Returns:
         Resend response dict or None if failed
     """
-    if not RESEND_API_KEY:
+    if not RESEND_API_KEY or resend is None:
         logger.warning(f"Email not sent (no API key): {subject} -> {to}")
         return None
     
@@ -186,6 +216,54 @@ def send_welcome_email(email: str, name: str, user_id: str) -> Optional[Dict]:
     return send_email(to=email, subject=subject, html=html, user_id=user_id, tags=["welcome"])
 
 
+def send_verification_email(email: str, name: str, user_id: str) -> Optional[Dict]:
+    token = generate_email_verification_token(user_id, email)
+    verification_url = get_email_verification_url(token)
+    subject = "Verify your UmukoziHR account"
+    html = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0c0a09; color: #e7e5e4;">
+      <div style="padding: 32px 28px; background: linear-gradient(135deg, #f97316 0%, #f59e0b 100%); color: white;">
+        <h1 style="margin: 0; font-size: 28px;">Verify your email</h1>
+      </div>
+      <div style="padding: 28px;">
+        <p style="font-size: 16px; line-height: 1.6; color: #d6d3d1;">Hi {name},</p>
+        <p style="font-size: 16px; line-height: 1.6; color: #d6d3d1;">
+          Confirm your email address to unlock document generation on UmukoziHR.
+        </p>
+        <p style="font-size: 16px; line-height: 1.6; color: #d6d3d1;">
+          Free accounts get 1 completed generation every 30 days. Paid plans also require a verified account before use.
+        </p>
+        <div style="margin: 28px 0;">
+          <a href="{verification_url}" style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #f59e0b 100%); color: white; text-decoration: none; font-weight: 700; padding: 14px 22px; border-radius: 12px;">
+            Verify Email
+          </a>
+        </div>
+        <p style="font-size: 14px; line-height: 1.6; color: #a8a29e;">
+          This link expires in {EMAIL_VERIFICATION_EXPIRE_HOURS} hours.
+        </p>
+        <p style="font-size: 14px; line-height: 1.6; color: #a8a29e;">
+          If the button does not work, open this link:<br />
+          <a href="{verification_url}" style="color: #fb923c;">{verification_url}</a>
+        </p>
+      </div>
+    </div>
+    """
+    plain_text = (
+        f"Hi {name},\n\n"
+        "Verify your UmukoziHR account to unlock document generation.\n\n"
+        f"Open this link: {verification_url}\n\n"
+        f"This link expires in {EMAIL_VERIFICATION_EXPIRE_HOURS} hours."
+    )
+    return send_email(
+        to=email,
+        subject=subject,
+        html=html,
+        plain_text=plain_text,
+        user_id=user_id,
+        tags=["verification"],
+    )
+
+
 def send_onboarding_nudge_email(
     email: str, name: str, user_id: str, completeness: int
 ) -> Optional[Dict]:
@@ -282,11 +360,11 @@ def send_broadcast_to_all(
     Returns:
         Dict with success stats
     """
-    if not RESEND_API_KEY:
+    if not RESEND_API_KEY or resend is None:
         logger.warning(f"Broadcast not sent (no API key): {subject}")
         return {
             "success": False,
-            "message": "RESEND_API_KEY not configured",
+            "message": "Email service not configured",
             "total": len(recipients),
             "successful": 0,
             "failed": len(recipients)

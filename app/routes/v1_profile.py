@@ -22,6 +22,7 @@ from app.db.models import Profile as DBProfile, User, Job, Run, UserEvent, Gener
 from app.auth.auth import get_current_user
 from app.utils.completeness import calculate_completeness
 from app.utils.analytics import track_event, EventType
+from app.core.subscription import is_bounty_tier
 
 logger = logging.getLogger(__name__)
 
@@ -761,7 +762,7 @@ def get_journey(
 
         # Get stats
         stats = get_user_stats(db, str(user_uuid))
-        is_pro = user.subscription_tier == "pro"
+        is_pro = is_bounty_tier(user.subscription_tier)
 
         # Build journey stats
         journey_stats = JourneyStats(

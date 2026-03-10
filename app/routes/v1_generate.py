@@ -25,7 +25,16 @@ from app.utils.analytics import (
     track_event, track_generation_metric, EventType,
     detect_jd_industry, detect_jd_role_type
 )
-from app.core.subscription import SUBSCRIPTION_LIVE
+from app.core.subscription import (
+    ALLOW_ANONYMOUS_GENERATION,
+    SUBSCRIPTION_LIVE,
+    can_use_feature,
+    ensure_usage_window,
+    evaluate_generation_access,
+    normalize_tier_name,
+    record_generation_usage,
+    sync_user_subscription,
+)
 from datetime import timedelta
 
 logger = logging.getLogger(__name__)
@@ -129,6 +138,81 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     except (ValueError, KeyError) as e:
         logger.error(f"Error processing user token: {e}")
         return None
+
+
+def _generation_access_payload(message: str, reason_code: str, upgrade_target: Optional[str] = None, remaining: Optional[int] = None) -> dict:
+    payload = {
+        "message": message,
+        "reason_code": reason_code,
+    }
+    if upgrade_target:
+        payload["upgrade_target"] = upgrade_target
+    if remaining is not None:
+        payload["remaining"] = remaining
+    return payload
+
+
+def _generation_access_exception(message: str, reason_code: str, upgrade_target: Optional[str] = None, remaining: Optional[int] = None) -> HTTPException:
+    status_code = 401 if reason_code == "authentication_required" else 403
+    return HTTPException(
+        status_code=status_code,
+        detail=_generation_access_payload(
+            message=message,
+            reason_code=reason_code,
+            upgrade_target=upgrade_target,
+            remaining=remaining,
+        ),
+    )
+
+
+def enforce_generation_entitlement(
+    db: Session,
+    user_id: Optional[str],
+    planned_jobs: int,
+    request: Optional[Request] = None,
+):
+    if not user_id:
+        if SUBSCRIPTION_LIVE and not ALLOW_ANONYMOUS_GENERATION:
+            raise _generation_access_exception(
+                message="Please sign in to generate documents.",
+                reason_code="authentication_required",
+            )
+        return None
+
+    user_uuid = python_uuid.UUID(user_id)
+    user = db.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    changed = sync_user_subscription(user)
+    changed = ensure_usage_window(user) or changed
+    if changed:
+        db.commit()
+        db.refresh(user)
+
+    decision = evaluate_generation_access(user, planned_jobs=max(1, planned_jobs))
+    if not decision.allowed:
+        track_event(
+            db=db,
+            event_type=EventType.GENERATION_BLOCKED,
+            user_id=str(user.id),
+            event_data={
+                "reason_code": decision.reason_code,
+                "tier": normalize_tier_name(user.subscription_tier),
+                "remaining": decision.remaining,
+                "requested_jobs": planned_jobs,
+                "upgrade_target": decision.upgrade_target,
+            },
+            request=request,
+        )
+        raise _generation_access_exception(
+            message=decision.message or "You cannot generate documents right now.",
+            reason_code=decision.reason_code or "generation_blocked",
+            upgrade_target=decision.upgrade_target,
+            remaining=decision.remaining,
+        )
+
+    return user
 
 
 def convert_v3_profile_to_legacy(profile_v3: ProfileV3) -> Profile:
@@ -420,6 +504,7 @@ def run_generation_for_job(db: Session, user_id: str, job: DBJob, profile_data: 
 @router.post("/")
 def generate(
     request: GenerateRequest,
+    http_request: Request,
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -431,6 +516,13 @@ def generate(
     run_id = str(uuid.uuid4())
     logger.info(f"Starting document generation for run_id: {run_id}")
     logger.info(f"User authenticated: {bool(user_id)}, Jobs count: {len(request.jobs)}")
+
+    user = enforce_generation_entitlement(
+        db=db,
+        user_id=user_id,
+        planned_jobs=len(request.jobs),
+        request=http_request,
+    )
 
     # Determine profile source
     profile_to_use = request.profile
@@ -546,7 +638,8 @@ def generate(
                         db=db,
                         event_type=EventType.GENERATION_ERROR,
                         user_id=user_id,
-                        event_data={"job_title": request.jobs[idx].title, "company": request.jobs[idx].company, "error": str(e)}
+                        event_data={"job_title": request.jobs[idx].title, "company": request.jobs[idx].company, "error": str(e)},
+                        request=http_request,
                     )
                 raise _to_generation_http_exception(e, request.jobs[idx].company)
     
@@ -604,20 +697,14 @@ def generate(
             user_uuid = python_uuid.UUID(user_id)
             user = db.query(User).filter(User.id == user_uuid).first()
             if user:
-                # Initialize usage reset date if not set
-                now = datetime.utcnow()
-                if not user.usage_reset_at:
-                    user.usage_reset_at = now + timedelta(days=30)
-                elif user.usage_reset_at <= now:
-                    # Reset if past reset date
-                    user.monthly_generations_used = 0
-                    user.usage_reset_at = now + timedelta(days=30)
-                
-                # Increment usage by number of successful jobs
                 successful_count = len([r for r in job_results if r.get('resume_success') or r.get('cover_success')])
-                user.monthly_generations_used = (user.monthly_generations_used or 0) + successful_count
-                db.commit()
-                logger.info(f"Usage updated: user={user_id}, added={successful_count}, total={user.monthly_generations_used}")
+                if successful_count > 0:
+                    sync_user_subscription(user)
+                    record_generation_usage(user, count=successful_count)
+                    db.commit()
+                    logger.info(
+                        f"Usage updated: user={user_id}, added={successful_count}, total={user.monthly_generations_used}"
+                    )
         
         # Track generation complete event
         total_duration = time.time() - generation_start_time
@@ -629,7 +716,8 @@ def generate(
                 "run_id": run_id,
                 "jobs_count": len(request.jobs),
                 "total_duration": round(total_duration, 2)
-            }
+            },
+            request=http_request,
         )
         
         # Send first generation email if this is user's first generation
@@ -653,7 +741,9 @@ def generate(
         except Exception as email_error:
             logger.warning(f"Failed to send first generation email: {email_error}")
     
-    zip_path = bundle_pdfs_only(run_id, user_name)
+    zip_path = None
+    if not user_id or not SUBSCRIPTION_LIVE or can_use_feature(user.subscription_tier if user else None, "zip_download"):
+        zip_path = bundle_pdfs_only(run_id, user_name)
     logger.info(f"Document generation completed for run_id: {run_id}")
     logger.info(f"Generated {len(artifacts)} artifacts, bundle: {zip_path}")
     
@@ -661,7 +751,7 @@ def generate(
         "run_id": run_id,  # Changed from "run" to "run_id" for frontend compatibility
         "run": run_id,     # Keep both for backward compatibility
         "artifacts": artifacts, 
-        "zip": f"/artifacts/{os.path.basename(zip_path)}", 
+        "zip": f"/artifacts/{os.path.basename(zip_path)}" if zip_path else None,
         "authenticated": bool(user_id),
         "user_id": user_id,
         "status": "completed"  # Since we process synchronously, it's always completed

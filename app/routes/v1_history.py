@@ -14,6 +14,7 @@ from app.models import HistoryResponse, HistoryItem, RegenerateResponse, JobLand
 from app.db.database import get_db
 from app.db.models import Run as DBRun, Job as DBJob, Profile as DBProfile, User as DBUser
 from app.auth.auth import get_current_user
+from app.core.subscription import SUBSCRIPTION_LIVE, record_generation_usage, sync_user_subscription
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +134,15 @@ def regenerate_run(
         raise HTTPException(status_code=404, detail="Profile not found. Please complete onboarding.")
 
     # Import generate logic (avoid circular imports)
-    from app.routes.v1_generate import run_generation_for_job
+    from app.routes.v1_generate import enforce_generation_entitlement, run_generation_for_job
 
     try:
+        user = enforce_generation_entitlement(
+            db=db,
+            user_id=user_id,
+            planned_jobs=1,
+        )
+
         # Create new run with current profile
         new_run = run_generation_for_job(
             db=db,
@@ -144,6 +151,11 @@ def regenerate_run(
             profile_data=profile.profile_data,
             profile_version=profile.version
         )
+
+        if SUBSCRIPTION_LIVE and user:
+            sync_user_subscription(user)
+            record_generation_usage(user, count=1)
+            db.commit()
 
         logger.info(f"Regeneration successful. New run_id: {new_run.id}")
 

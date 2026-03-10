@@ -35,12 +35,19 @@ class EventType:
     GENERATION_START = "generation_start"
     GENERATION_COMPLETE = "generation_complete"
     GENERATION_ERROR = "generation_error"
+    GENERATION_BLOCKED = "generation_blocked"
     
     # Downloads
     DOWNLOAD_PDF = "download_pdf"
     DOWNLOAD_TEX = "download_tex"
     DOWNLOAD_ZIP = "download_zip"
     
+    # Subscription
+    UPGRADE_MODAL_IMPRESSION = "upgrade_modal_impression"
+    CHECKOUT_STARTED = "checkout_started"
+    SUBSCRIPTION_CONVERTED = "subscription_converted"
+    VERIFICATION_EMAIL_SENT = "verification_email_sent"
+
     # Admin
     ADMIN_LOGIN = "admin_login"
 

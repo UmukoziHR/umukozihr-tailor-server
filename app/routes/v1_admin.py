@@ -13,13 +13,18 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc, and_, or_
 from pydantic import BaseModel
 from uuid import UUID
 
 from app.db.database import get_db
 from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
 from app.auth.auth import get_current_user
+from app.core.subscription import (
+    LAUNCH_MONTHLY_GENERATIONS,
+    apply_subscription_purchase,
+    normalize_tier_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +90,8 @@ class GeolocationStats(BaseModel):
 
 class SubscriptionStats(BaseModel):
     free_users: int
-    pro_users: int
+    launch_users: int
+    bounty_users: int
     total_paid: int
     africa_users: int
     global_users: int
@@ -100,6 +106,12 @@ class SubscriptionStats(BaseModel):
     total_generations_used: int
     users_at_limit: int
     avg_generations_per_user: float
+    blocked_unverified: int
+    blocked_free_limit: int
+    blocked_launch_limit: int
+    upgrade_modal_impressions: int
+    checkout_starts: int
+    successful_conversions: int
 
 
 class JobLandingStats(BaseModel):
@@ -187,7 +199,7 @@ def get_admin_dashboard(
     signups_this_month = db.query(User).filter(User.created_at >= month_start).count()
     
     try:
-        verified_users = db.query(User).filter(User.email_verified == True).count()
+        verified_users = db.query(User).filter(User.is_verified == True).count()
     except:
         verified_users = 0
     
@@ -383,28 +395,36 @@ def get_admin_dashboard(
     # Subscription Stats
     try:
         free_users = db.query(User).filter(
-            (User.subscription_tier == "free") | (User.subscription_tier == None)
+            (User.subscription_tier == "free") | (User.subscription_tier == None) | (User.subscription_tier == "")
         ).count()
-        pro_users = db.query(User).filter(User.subscription_tier == "pro").count()
+        launch_users = db.query(User).filter(User.subscription_tier == "launch").count()
+        bounty_users = db.query(User).filter(
+            (User.subscription_tier == "bounty") | (User.subscription_tier == "pro")
+        ).count()
         
         africa_users = db.query(User).filter(User.region_group == "africa").count()
         global_users = db.query(User).filter(
             (User.region_group == "global") | (User.region_group == None)
         ).count()
         
-        active_subs = db.query(User).filter(User.subscription_status == "active").count()
+        active_subs = db.query(User).filter(
+            and_(
+                User.subscription_status == "active",
+                User.subscription_tier.in_(["launch", "bounty", "pro"])
+            )
+        ).count()
         cancelled_subs = db.query(User).filter(User.subscription_status == "cancelled").count()
         expired_subs = db.query(User).filter(User.subscription_status == "expired").count()
         
-        africa_pro = db.query(User).filter(
-            and_(User.subscription_tier == "pro", User.region_group == "africa")
+        africa_paid = db.query(User).filter(
+            and_(User.subscription_tier.in_(["launch", "bounty", "pro"]), User.region_group == "africa")
         ).count()
-        global_pro = db.query(User).filter(
-            and_(User.subscription_tier == "pro", 
+        global_paid = db.query(User).filter(
+            and_(User.subscription_tier.in_(["launch", "bounty", "pro"]), 
                  (User.region_group == "global") | (User.region_group == None))
         ).count()
         
-        monthly_revenue = (africa_pro * 5) + (global_pro * 20)
+        monthly_revenue = (launch_users * 10) + (bounty_users * 20)
         
         africa_free = db.query(User).filter(
             and_((User.subscription_tier == "free") | (User.subscription_tier == None),
@@ -414,22 +434,72 @@ def get_admin_dashboard(
             and_((User.subscription_tier == "free") | (User.subscription_tier == None),
                  (User.region_group == "global") | (User.region_group == None))
         ).count()
-        potential_revenue = (africa_free * 5) + (global_free * 20) + monthly_revenue
+        potential_revenue = (africa_free * 10) + (global_free * 10) + monthly_revenue
         
         total_gens_used = db.query(func.sum(User.monthly_generations_used)).scalar() or 0
         users_at_limit = db.query(User).filter(
-            and_((User.subscription_tier == "free") | (User.subscription_tier == None),
-                 User.monthly_generations_used >= 5)
+            or_(
+                and_(
+                    ((User.subscription_tier == "free") | (User.subscription_tier == None) | (User.subscription_tier == "")),
+                    User.monthly_generations_used >= 1
+                ),
+                and_(
+                    User.subscription_tier == "launch",
+                    User.monthly_generations_used >= LAUNCH_MONTHLY_GENERATIONS
+                ),
+            )
         ).count()
         avg_gens = db.query(func.avg(User.monthly_generations_used)).scalar() or 0
         
-        africa_conversion = round((africa_pro / africa_users * 100) if africa_users > 0 else 0, 1)
-        global_conversion = round((global_pro / global_users * 100) if global_users > 0 else 0, 1)
-        
+        africa_conversion = round((africa_paid / africa_users * 100) if africa_users > 0 else 0, 1)
+        global_conversion = round((global_paid / global_users * 100) if global_users > 0 else 0, 1)
+
+        # Funnel metrics use JSONB path syntax; isolated so failures don't zero tier counts above
+        try:
+            blocked_unverified = db.query(UserEvent).filter(
+                and_(
+                    UserEvent.event_type == "generation_blocked",
+                    UserEvent.created_at >= month_start,
+                    UserEvent.event_data["reason_code"].astext == "verification_required",
+                )
+            ).count()
+            blocked_free_limit = db.query(UserEvent).filter(
+                and_(
+                    UserEvent.event_type == "generation_blocked",
+                    UserEvent.created_at >= month_start,
+                    UserEvent.event_data["reason_code"].astext == "free_limit_reached",
+                )
+            ).count()
+            blocked_launch_limit = db.query(UserEvent).filter(
+                and_(
+                    UserEvent.event_type == "generation_blocked",
+                    UserEvent.created_at >= month_start,
+                    UserEvent.event_data["reason_code"].astext == "launch_limit_reached",
+                )
+            ).count()
+            upgrade_modal_impressions = db.query(UserEvent).filter(
+                and_(UserEvent.event_type == "upgrade_modal_impression", UserEvent.created_at >= month_start)
+            ).count()
+            checkout_starts = db.query(UserEvent).filter(
+                and_(UserEvent.event_type == "checkout_started", UserEvent.created_at >= month_start)
+            ).count()
+            successful_conversions = db.query(UserEvent).filter(
+                and_(UserEvent.event_type == "subscription_converted", UserEvent.created_at >= month_start)
+            ).count()
+        except Exception as funnel_exc:
+            logger.warning(f"Funnel/blocked event queries unavailable (JSONB not supported?): {funnel_exc}")
+            blocked_unverified = 0
+            blocked_free_limit = 0
+            blocked_launch_limit = 0
+            upgrade_modal_impressions = 0
+            checkout_starts = 0
+            successful_conversions = 0
+
     except Exception as e:
         logger.warning(f"Error fetching subscription stats: {e}")
         free_users = total_users
-        pro_users = 0
+        launch_users = 0
+        bounty_users = 0
         africa_users = 0
         global_users = total_users
         active_subs = 0
@@ -442,11 +512,18 @@ def get_admin_dashboard(
         avg_gens = 0
         africa_conversion = 0
         global_conversion = 0
+        blocked_unverified = 0
+        blocked_free_limit = 0
+        blocked_launch_limit = 0
+        upgrade_modal_impressions = 0
+        checkout_starts = 0
+        successful_conversions = 0
     
     subscription_stats = SubscriptionStats(
         free_users=free_users,
-        pro_users=pro_users,
-        total_paid=pro_users,
+        launch_users=launch_users,
+        bounty_users=bounty_users,
+        total_paid=launch_users + bounty_users,
         africa_users=africa_users,
         global_users=global_users,
         active_subscriptions=active_subs,
@@ -454,12 +531,18 @@ def get_admin_dashboard(
         expired_subscriptions=expired_subs,
         monthly_revenue_estimate=monthly_revenue,
         potential_revenue=potential_revenue,
-        conversion_rate=round((pro_users / total_users * 100) if total_users > 0 else 0, 1),
+        conversion_rate=round(((launch_users + bounty_users) / total_users * 100) if total_users > 0 else 0, 1),
         africa_conversion_rate=africa_conversion,
         global_conversion_rate=global_conversion,
         total_generations_used=total_gens_used,
         users_at_limit=users_at_limit,
-        avg_generations_per_user=round(avg_gens, 1)
+        avg_generations_per_user=round(avg_gens, 1),
+        blocked_unverified=blocked_unverified,
+        blocked_free_limit=blocked_free_limit,
+        blocked_launch_limit=blocked_launch_limit,
+        upgrade_modal_impressions=upgrade_modal_impressions,
+        checkout_starts=checkout_starts,
+        successful_conversions=successful_conversions,
     )
     
     # Geolocation Stats - Real user locations for product analytics
@@ -834,14 +917,15 @@ def make_user_admin(
 
 
 @router.post("/users/{user_id}/upgrade-to-pro")
-def manual_upgrade_to_pro(
+def manual_upgrade_to_paid(
     user_id: str,
+    tier: str = Query("bounty", description="Target tier: launch or bounty"),
     admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     POST /admin/users/{user_id}/upgrade-to-pro
-    Manually upgrade a user to Pro subscription (admin only)
+    Manually upgrade a user to a paid subscription (admin only)
     Use this when Paystack webhook fails or for manual upgrades
     """
     try:
@@ -851,24 +935,20 @@ def manual_upgrade_to_pro(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        now = datetime.utcnow()
-        expires_at = now + timedelta(days=30)
-        
-        user.subscription_tier = "pro"
-        user.subscription_status = "active"
-        user.subscription_started_at = now
-        user.subscription_expires_at = expires_at
-        user.monthly_generations_limit = -1  # Unlimited
-        user.monthly_generations_used = 0  # Reset usage
+        normalized_tier = normalize_tier_name(tier)
+        if normalized_tier not in {"launch", "bounty"}:
+            raise HTTPException(status_code=400, detail="Invalid tier")
+
+        apply_subscription_purchase(user, normalized_tier)
         
         db.commit()
         
-        logger.info(f"Manual Pro upgrade for {user.email} by {admin['email']}, expires: {expires_at}")
+        logger.info(f"Manual paid upgrade for {user.email} by {admin['email']} -> {normalized_tier}")
         
         return {
             "success": True,
-            "message": f"User {user.email} upgraded to Pro",
-            "expires_at": expires_at.isoformat()
+            "message": f"User {user.email} upgraded to {normalized_tier.title()}",
+            "expires_at": user.subscription_expires_at.isoformat() if user.subscription_expires_at else None,
         }
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user ID format")
@@ -877,37 +957,34 @@ def manual_upgrade_to_pro(
 @router.post("/users/upgrade-by-email")
 def upgrade_user_by_email(
     email: str = Query(..., description="User email to upgrade"),
+    tier: str = Query("bounty", description="Target tier: launch or bounty"),
     admin: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     POST /admin/users/upgrade-by-email?email=user@example.com
-    Upgrade user to Pro by email address
+    Upgrade user to Launch or Bounty by email address
     """
     user = db.query(User).filter(User.email == email).first()
     
     if not user:
         raise HTTPException(status_code=404, detail=f"User with email {email} not found")
     
-    now = datetime.utcnow()
-    expires_at = now + timedelta(days=30)
-    
-    user.subscription_tier = "pro"
-    user.subscription_status = "active"
-    user.subscription_started_at = now
-    user.subscription_expires_at = expires_at
-    user.monthly_generations_limit = -1  # Unlimited
-    user.monthly_generations_used = 0  # Reset usage
+    normalized_tier = normalize_tier_name(tier)
+    if normalized_tier not in {"launch", "bounty"}:
+        raise HTTPException(status_code=400, detail="Invalid tier")
+
+    apply_subscription_purchase(user, normalized_tier)
     
     db.commit()
     
-    logger.info(f"Manual Pro upgrade for {email} by {admin['email']}, expires: {expires_at}")
+    logger.info(f"Manual paid upgrade for {email} by {admin['email']} -> {normalized_tier}")
     
     return {
         "success": True,
-        "message": f"User {email} upgraded to Pro",
+        "message": f"User {email} upgraded to {normalized_tier.title()}",
         "user_id": str(user.id),
-        "expires_at": expires_at.isoformat()
+        "expires_at": user.subscription_expires_at.isoformat() if user.subscription_expires_at else None,
     }
 
 

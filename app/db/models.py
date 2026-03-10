@@ -28,7 +28,7 @@ class User(Base):
     is_public = Column(Boolean, default=True, nullable=False)
     profile_views = Column(Integer, default=0)
     # Subscription & Payment (v1.4)
-    subscription_tier = Column(String, default="free")  # free, pro
+    subscription_tier = Column(String, default="free")  # free, launch, bounty
     subscription_status = Column(String, default="active")  # active, cancelled, expired, trial
     subscription_started_at = Column(DateTime, nullable=True)
     subscription_expires_at = Column(DateTime, nullable=True)
@@ -36,7 +36,7 @@ class User(Base):
     paystack_subscription_code = Column(String, nullable=True)  # Paystack subscription code (SUB_xxx)
     # Usage tracking
     monthly_generations_used = Column(Integer, default=0)
-    monthly_generations_limit = Column(Integer, default=5)  # Free tier: 5/month
+    monthly_generations_limit = Column(Integer, default=1)  # Free tier: 1 / rolling 30 days
     usage_reset_at = Column(DateTime, nullable=True)  # When to reset monthly count
     # Profile picture
     avatar_url = Column(String, nullable=True)  # URL to profile picture

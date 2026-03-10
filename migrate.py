@@ -14,6 +14,7 @@ sys.path.insert(0, str(server_dir))
 from app.db.database import engine, Base
 from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
 from app.auth.auth import hash_password
+from app.core.subscription import LAUNCH_MONTHLY_GENERATIONS
 
 def migrate_v1_2_to_v1_3(db):
     """Migrate v1.2 schema to v1.3 by adding new columns"""
@@ -112,7 +113,7 @@ def migrate_v1_2_to_v1_3(db):
             migrations.append("ALTER TABLE users ADD COLUMN monthly_generations_used INTEGER DEFAULT 0")
         
         if 'monthly_generations_limit' not in users_columns:
-            migrations.append("ALTER TABLE users ADD COLUMN monthly_generations_limit INTEGER DEFAULT 5")
+            migrations.append("ALTER TABLE users ADD COLUMN monthly_generations_limit INTEGER DEFAULT 1")
         
         if 'usage_reset_at' not in users_columns:
             migrations.append("ALTER TABLE users ADD COLUMN usage_reset_at TIMESTAMP")
@@ -129,6 +130,13 @@ def migrate_v1_2_to_v1_3(db):
         # This always runs to ensure constraint is dropped
         if "postgresql" in str(engine.url):
             migrations.append("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
+
+        # Monetization V1 normalization
+        migrations.append("UPDATE users SET subscription_tier = 'free' WHERE subscription_tier IS NULL OR TRIM(subscription_tier) = ''")
+        migrations.append("UPDATE users SET subscription_tier = 'bounty' WHERE LOWER(subscription_tier) = 'pro'")
+        migrations.append("UPDATE users SET monthly_generations_limit = 1 WHERE LOWER(COALESCE(subscription_tier, 'free')) = 'free'")
+        migrations.append(f"UPDATE users SET monthly_generations_limit = {LAUNCH_MONTHLY_GENERATIONS} WHERE LOWER(subscription_tier) = 'launch'")
+        migrations.append("UPDATE users SET monthly_generations_limit = -1 WHERE LOWER(subscription_tier) = 'bounty'")
 
     if 'profiles' in inspector.get_table_names():
         # Add version column

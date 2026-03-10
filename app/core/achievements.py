@@ -5,11 +5,13 @@ UmukoziHR Resume Tailor v1.6
 Achievement tiers:
 - Tier 1: Getting Started (Free)
 - Tier 2: Building Momentum (Free)
-- Tier 3: Pro Exclusive (Premium)
+- Tier 3: Bounty exclusive
 """
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from enum import Enum
+
+from app.core.subscription import is_bounty_tier, normalize_tier_name
 
 
 class AchievementTier(str, Enum):
@@ -114,7 +116,7 @@ ACHIEVEMENTS = {
         "color": "#14b8a6"  # Teal
     },
     
-    # Tier 3 - Pro Exclusive
+    # Tier 3 - Bounty exclusive
     "thirty_day_champion": {
         "id": "thirty_day_champion",
         "name": "30-Day Champion",
@@ -287,7 +289,7 @@ def get_user_stats(db, user_id: str) -> Dict:
         "longest_streak": row[4] or 0,
         "total_xp": row[5] or 0,
         "achievements_unlocked": row[6] or [],
-        "is_pro": row[7] == "pro"
+        "is_pro": is_bounty_tier(row[7])
     }
 
 
