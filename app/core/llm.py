@@ -6,7 +6,7 @@ import logging
 from typing import Any, Optional
 from dotenv import load_dotenv
 from google import genai
-from google.genai.types import Tool, Schema, GenerateContentConfig, ThinkingConfig
+from google.genai.types import Tool, Schema, GenerateContentConfig
 
 # Load environment variables
 load_dotenv()
@@ -41,36 +41,14 @@ class LLMProviderError(LLMServiceError):
     """Raised for generic upstream provider errors."""
 
 
-def _read_int_env(name: str, default: int, min_value: Optional[int] = None, max_value: Optional[int] = None) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-
-    try:
-        value = int(raw)
-    except ValueError:
-        logger.warning(f"Invalid integer in {name}='{raw}', falling back to {default}")
-        return default
-
-    if min_value is not None and value < min_value:
-        logger.warning(f"{name}={value} is below minimum {min_value}, clamping")
-        value = min_value
-    if max_value is not None and value > max_value:
-        logger.warning(f"{name}={value} exceeds maximum {max_value}, clamping")
-        value = max_value
-    return value
-
-
-def _read_float_env(name: str, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-
-    try:
-        return float(raw)
-    except ValueError:
-        logger.warning(f"Invalid float in {name}='{raw}', falling back to {default}")
-        return default
+# =============================================================================
+# MODEL CONFIGURATION — edit here, not via env vars
+# =============================================================================
+_PRIMARY_MODEL = "gemini-2.0-flash"
+_FALLBACK_MODEL = "gemini-1.5-flash"
+_TEMPERATURE = 0.2
+_TOP_P = 0.9
+_MAX_OUTPUT_TOKENS = 8192
 
 
 def _coerce_int(value: Any) -> Optional[int]:
@@ -349,61 +327,43 @@ def call_llm(prompt: str) -> str:
         client = genai.Client(api_key=api_key)
         logger.info(f"Gemini client created successfully")
 
-        # Keep model and token budget configurable to control quota burn in production.
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash").strip()
-        temperature = _read_float_env("GEMINI_TEMPERATURE", 0.2)
-        top_p = _read_float_env("GEMINI_TOP_P", 0.9)
-        max_output_tokens = _read_int_env("GEMINI_MAX_OUTPUT_TOKENS", 8192, min_value=512, max_value=65536)
-        thinking_budget = _read_int_env("GEMINI_THINKING_BUDGET", 0, min_value=0, max_value=32768)
-
         logger.info(
-            "Configuring generation settings: "
-            f"model={model_name}, fallback_model={fallback_model}, temp={temperature}, "
-            f"max_tokens={max_output_tokens}, thinking_budget={thinking_budget}"
+            f"Configuring generation: model={_PRIMARY_MODEL}, fallback={_FALLBACK_MODEL}, "
+            f"temp={_TEMPERATURE}, max_tokens={_MAX_OUTPUT_TOKENS}"
         )
 
-        cfg_kwargs = dict(
+        cfg = GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=OUTPUT_JSON_SCHEMA,
-            temperature=temperature,
-            top_p=top_p,
+            temperature=_TEMPERATURE,
+            top_p=_TOP_P,
             candidate_count=1,
-            max_output_tokens=max_output_tokens,
+            max_output_tokens=_MAX_OUTPUT_TOKENS,
         )
-        if thinking_budget > 0:
-            cfg_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
 
-        cfg = GenerateContentConfig(**cfg_kwargs)
-
-        logger.info(f"Sending request to Gemini API (primary model={model_name})...")
+        logger.info(f"Sending request to Gemini API (primary model={_PRIMARY_MODEL})...")
         try:
             response = client.models.generate_content(
-                model=model_name,
+                model=_PRIMARY_MODEL,
                 contents=[f"{SYSTEM}\n\n{prompt}"],
                 config=cfg,
             )
-            active_model = model_name
+            active_model = _PRIMARY_MODEL
         except Exception as primary_error:
             classified_primary = classify_llm_exception(primary_error)
-            can_fallback = (
-                fallback_model
-                and fallback_model != model_name
-                and isinstance(classified_primary, (LLMQuotaExceededError, LLMRateLimitError))
-            )
-            if not can_fallback:
+            if not isinstance(classified_primary, (LLMQuotaExceededError, LLMRateLimitError)):
                 raise primary_error
 
             logger.warning(
-                f"Primary model '{model_name}' failed with {type(classified_primary).__name__}; "
-                f"retrying once with fallback model '{fallback_model}'"
+                f"Primary model '{_PRIMARY_MODEL}' failed with {type(classified_primary).__name__}; "
+                f"retrying with fallback model '{_FALLBACK_MODEL}'"
             )
             response = client.models.generate_content(
-                model=fallback_model,
+                model=_FALLBACK_MODEL,
                 contents=[f"{SYSTEM}\n\n{prompt}"],
                 config=cfg,
             )
-            active_model = fallback_model
+            active_model = _FALLBACK_MODEL
 
         logger.info(f"Gemini API call completed using model={active_model}, processing response...")
 

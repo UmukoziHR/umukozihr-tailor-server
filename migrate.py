@@ -13,6 +13,7 @@ sys.path.insert(0, str(server_dir))
 
 from app.db.database import engine, Base
 from app.db.models import User, Profile, Job, Run, UserEvent, GenerationMetric, SystemLog
+from app.db.models_pipeline import PortalConfig, DiscoveredJob, JobEvaluation, ApplicationQueue  # noqa: F401
 from app.auth.auth import hash_password
 from app.core.subscription import LAUNCH_MONTHLY_GENERATIONS
 
@@ -298,6 +299,42 @@ def migrate_v1_2_to_v1_3(db):
         print("[OK] Schema is up to date")
 
 
+def migrate_to_v2_5(db):
+    """v2.5 pipeline table migrations — new tables are created by create_all().
+    This function handles any column-level additions needed for forward compatibility."""
+    from sqlalchemy import text, inspect
+
+    print("\n--- Checking for v2.5 pipeline schema migrations ---")
+    inspector = inspect(engine)
+
+    # v2.5 pipeline tables are created fresh by create_all().
+    # If they already exist (upgrade scenario), verify key columns are present.
+    migrations = []
+
+    if inspector.has_table('portal_configs'):
+        portal_cols = [c['name'] for c in inspector.get_columns('portal_configs')]
+        if 'scan_log' not in portal_cols:
+            migrations.append("ALTER TABLE portal_configs ADD COLUMN scan_log TEXT")
+
+    if migrations:
+        print(f"Applying {len(migrations)} v2.5 migrations...")
+        for migration in migrations:
+            try:
+                print(f"  - {migration}")
+                db.execute(text(migration))
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                err_str = str(e).lower()
+                if "already exists" in err_str or "duplicate" in err_str:
+                    print(f"    (already applied, skipping)")
+                else:
+                    print(f"    [ERROR]: {e}")
+        print("[OK] v2.5 migrations completed")
+    else:
+        print("[OK] v2.5 schema is up to date")
+
+
 def create_tables():
     """Create all database tables"""
     try:
@@ -322,7 +359,11 @@ def create_tables():
         else:
             tables = []
 
-        expected_tables = ['users', 'profiles', 'jobs', 'runs', 'user_events', 'generation_metrics', 'system_logs']
+        expected_tables = [
+            'users', 'profiles', 'jobs', 'runs', 'user_events', 'generation_metrics', 'system_logs',
+            # v2.5 pipeline tables
+            'portal_configs', 'discovered_jobs', 'job_evaluations', 'application_queue'
+        ]
         created_tables = [table for table in expected_tables if table in tables]
 
         print(f"Created tables: {created_tables}")
@@ -335,6 +376,9 @@ def create_tables():
 
         # Run v1.2 → v1.3 migrations
         migrate_v1_2_to_v1_3(db)
+
+        # Run v2.5 pipeline migrations
+        migrate_to_v2_5(db)
 
         # Setup admin user
         setup_admin_user(db)
@@ -400,8 +444,8 @@ def setup_admin_user(db):
 
             db.execute(
                 text("""
-                    INSERT INTO users (id, email, password_hash, is_admin, is_verified, onboarding_completed, onboarding_step, created_at)
-                    VALUES (:id, :email, :password_hash, TRUE, TRUE, TRUE, 0, NOW())
+                    INSERT INTO users (id, email, password_hash, is_admin, is_verified, onboarding_completed, onboarding_step, is_public, created_at)
+                    VALUES (:id, :email, :password_hash, TRUE, TRUE, TRUE, 0, TRUE, NOW())
                 """),
                 {
                     "id": user_id,

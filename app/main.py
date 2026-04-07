@@ -19,6 +19,10 @@ from app.routes.v1_public import router as public_router
 from app.routes.v1_upload import router as upload_router
 from app.routes.v1_jd import router as jd_router
 from app.routes.v1_subscription import router as subscription_router
+from app.routes.v1_portals import router as portals_router
+from app.routes.v1_scanner import router as scanner_router
+from app.routes.v1_pipeline import router as pipeline_router
+from app.routes.v1_apply import router as apply_router
 import os
 
 # Configure logging - DEBUG level for detailed diagnostics
@@ -68,7 +72,7 @@ async def self_ping_task():
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events"""
     # Startup
-    logger.info("Starting UmukoziHR Resume Tailor API v1.3")
+    logger.info("Starting UmukoziHR Resume Tailor API v2.5")
 
     # Run database migrations on startup
     try:
@@ -92,7 +96,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down UmukoziHR Resume Tailor API v1.3")
+    logger.info("Shutting down UmukoziHR Resume Tailor API v2.5")
     
     # Stop email scheduler
     try:
@@ -110,7 +114,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="UmukoziHR Resume Tailor API",
-    version="v2.0",
+    version="v2.5",
     lifespan=lifespan,
     redirect_slashes=False
 )
@@ -193,7 +197,12 @@ app.include_router(public_router, prefix="/api/v1")
 app.include_router(upload_router, prefix="/api/v1")
 app.include_router(jd_router, prefix="/api/v1")
 app.include_router(subscription_router)
-logger.info("API routes registered successfully (v1.4 with subscriptions)")
+# v2.5 pipeline routes
+app.include_router(portals_router, prefix="/api/v1")
+app.include_router(scanner_router, prefix="/api/v1")
+app.include_router(pipeline_router, prefix="/api/v1")
+app.include_router(apply_router, prefix="/api/v1")
+logger.info("API routes registered successfully (v2.5 with pipeline)")
 
 @app.get("/health")
 def health_check():
@@ -204,3 +213,9 @@ ART = os.environ.get("ARTIFACTS_DIR", os.path.abspath(os.path.join(os.path.dirna
 os.makedirs(ART, exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=ART), name="artifacts")
 logger.info(f"Artifacts directory mounted at /artifacts: {ART}")
+
+# Mount static files (fonts, assets for modern PDF template)
+STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    logger.info(f"Static directory mounted at /static: {STATIC_DIR}")

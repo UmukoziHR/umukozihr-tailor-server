@@ -196,3 +196,8 @@ class SystemLog(Base):
         Index('ix_system_logs_level', 'level'),
         Index('ix_system_logs_created_at', 'created_at'),
     )
+
+
+# Import pipeline models so they are registered with Base.metadata
+# and included in create_all() calls
+from app.db.models_pipeline import PortalConfig, DiscoveredJob, JobEvaluation, ApplicationQueue  # noqa: F401, E402
