@@ -1,304 +1,256 @@
-# UmukoziHR Resume Tailor - Backend API v1.2
+# UmukoziHR Resume Tailor - Backend API v2.5
 
-🚀 **AI-Powered Resume & Cover Letter Generation Backend**
+🚀 **AI-Powered Resume Tailor + CareerOps Job Pipeline**
 
-A FastAPI-based backend service that generates perfectly tailored resumes and cover letters using Google Gemini 2.5 Flash LLM, with LaTeX compilation and PDF generation.
+FastAPI backend that tailors resumes/cover letters with Gemini AI **and** runs a full CareerOps job pipeline: scanning 20+ company portals, scoring every role with a 6-block AI evaluation, pre-filling application forms, and tracking submissions — all with human-in-the-loop confirmation before anything is submitted.
 
 ## ✨ Features
 
-- 🤖 **AI-Powered Content Generation** - Google Gemini 2.5 Flash integration
-- 🔐 **JWT Authentication** - Secure user authentication with bcrypt/SHA256 fallback
-- 📄 **Multi-Format Support** - US, EU, and Global resume formats
-- 🎯 **ATS Optimization** - Keyword matching and formatting optimization
-- 📊 **LaTeX Compilation** - Local latexmk + Docker fallback for PDF generation
-- 🗃️ **SQLite Database** - User profiles and job management
-- 📦 **ZIP Bundling** - Download all documents in one package
-- 🌐 **CORS Enabled** - Frontend integration ready
-- 📝 **Comprehensive Logging** - Full request/response tracking
+### Core (v1.x)
+- 🤖 **AI Document Generation** — Gemini 2.5 Flash for tailored resumes & cover letters
+- 📄 **LaTeX → PDF Compilation** — Local latexmk + Docker fallback
+- 🔐 **JWT Authentication** — Secure auth with bcrypt
+- 📊 **Multi-Format Resumes** — US, EU, and Global layouts
+- 🎯 **ATS Optimization** — Keyword injection and formatting
+
+### CareerOps Pipeline (v2.5)
+- 🔍 **Portal Scanner** — Scans 20+ company Greenhouse & Ashby boards for new roles
+- ⚡ **6-Block Evaluation** — AI scores each job on CV match, north-star alignment, compensation, culture, and STAR readiness
+- 📋 **Apply Queue** — Pre-fills application form fields; requires human approval before submit
+- 📈 **Tracker** — Full pipeline stats and submission history board
+- 🤖 **Playwright Integration** — Headless Chromium for JavaScript-heavy portals
 
 ## 🛠️ Tech Stack
 
-- **Framework**: FastAPI 0.104+
-- **AI/LLM**: Google Gemini 2.5 Flash
-- **Database**: SQLite (PostgreSQL ready)
-- **Authentication**: JWT + bcrypt
-- **Document Generation**: LaTeX + Jinja2 templates
-- **PDF Compilation**: latexmk + Docker fallback
-- **Testing**: pytest + requests
+| Layer | Technology |
+|-------|-----------|
+| Framework | FastAPI 0.104+ |
+| AI/LLM | Google Gemini 2.5 Flash |
+| Database | PostgreSQL (SQLAlchemy async) |
+| Authentication | JWT + bcrypt |
+| Document Gen | LaTeX + Jinja2 templates |
+| Portal Scanning | httpx + Greenhouse API + Playwright (Chromium) |
+| JD Extraction | Greenhouse API → httpx + BeautifulSoup → Playwright |
 
 ## 📋 Prerequisites
 
-### Required:
-- Python 3.9+
-- Google Gemini API Key ([Get one here](https://ai.google.dev/))
-
-### Optional (for PDF generation):
-- Docker (for LaTeX compilation fallback)
-- LaTeX distribution (TeXLive, MiKTeX, etc.) for local compilation
+- Python 3.11+
+- PostgreSQL (or `DATABASE_URL=sqlite:///./app.db` for dev)
+- Google Gemini API key ([Get one here](https://ai.google.dev/))
+- Playwright Chromium (installed automatically by `requirements.txt`)
 
 ## 🚀 Quick Start
 
-### 1. Clone and Navigate
+### 1. Install Dependencies
 ```bash
 cd server
-```
-
-### 2. Set Up Virtual Environment
-```bash
-# Create virtual environment
 python -m venv venv
+source venv/bin/activate      # macOS/Linux
+# OR
+venv\Scripts\activate         # Windows
 
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
-```bash
 pip install -r requirements.txt
+
+# Install Playwright's Chromium browser
+python -m playwright install chromium
 ```
 
-### 4. Configure Environment Variables
-Create a `.env` file in the server directory:
+### 2. Configure Environment
+Create a `.env` file in the `server/` directory:
 ```env
-# Required: Google Gemini API Key
+# Required
 GEMINI_API_KEY=your_gemini_api_key_here
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost/umukozihr
+# or for local dev:
+DATABASE_URL=sqlite+aiosqlite:///./app.db
 
-# Optional: LLM tuning (recommended for quota control)
+# Auth
+SECRET_KEY=your-secret-key-change-in-production
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+# Optional LLM tuning
 GEMINI_MODEL=gemini-2.5-flash
-GEMINI_FALLBACK_MODEL=gemini-2.5-flash
 GEMINI_MAX_OUTPUT_TOKENS=8192
 GEMINI_THINKING_BUDGET=0
-GENERATION_MAX_WORKERS=3
-
-# Optional: Authentication (defaults provided)
-SECRET_KEY=your-secret-key-here
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# Optional: Database (SQLite by default)
-DATABASE_URL=sqlite:///./app.db
-
-# Optional: Redis (for future async processing)
-REDIS_URL=redis://localhost:6379/0
 ```
 
-### 5. Initialize Database
+### 3. Initialize Database
 ```bash
 python migrate.py
 ```
 
-### 6. Start the Server
+### 4. Start the Server
 ```bash
-# Development mode (with auto-reload)
+# Development (with auto-reload)
+set -a && source .env && set +a  # load env vars first
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Production mode
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+# If port 8000 is taken
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-🎉 **Server running at: http://localhost:8000**
+Server docs: **http://localhost:8000/docs**
 
 ## 📡 API Endpoints
 
-### Health Check
+### Health
 ```http
 GET /health
 ```
 
 ### Authentication
 ```http
-POST /api/v1/auth/signup    # Create account
-POST /api/v1/auth/login     # Login
+POST /api/v1/auth/signup
+POST /api/v1/auth/login
 ```
 
-### Profile Management
+### Profile & Generation (v1.x)
 ```http
-POST /api/v1/profile/profile    # Save user profile
+POST /api/v1/profile/profile
+POST /api/v1/generate/generate
+GET  /api/v1/generate/status/{id}
+GET  /artifacts/{filename}
 ```
 
-### Document Generation
+### Portal Configuration (v2.5)
 ```http
-POST /api/v1/generate/generate     # Generate documents
-GET  /api/v1/generate/status/{id}  # Check generation status
+GET  /api/v1/portals/config         # Get active portal list
+POST /api/v1/portals/config         # Save portal configuration
 ```
 
-### File Downloads
+### Job Scanner (v2.5)
 ```http
-GET /artifacts/{filename}    # Download generated files
+POST /api/v1/scanner/scan                      # Trigger portal scan (background)
+GET  /api/v1/scanner/scan/status               # Poll scan progress
+GET  /api/v1/scanner/jobs                      # List discovered jobs (limit/offset/status/company)
+POST /api/v1/scanner/jobs/{id}/evaluate        # AI-evaluate a specific job
+POST /api/v1/scanner/jobs/{id}/dismiss         # Dismiss a job
 ```
 
-## 🧪 Testing
-
-### Run All Tests
-```bash
-# Run comprehensive test suite
-python tests/run_all_tests.py
-
-# Run specific test categories
-python tests/test_components.py    # Component tests
-python tests/test_api.py           # API tests
-python tests/full_api_test.py      # End-to-end tests
+### Apply Queue (v2.5)
+```http
+POST   /api/v1/apply/queue/{job_id}           # Add evaluated job to apply queue
+GET    /api/v1/apply/queue                    # List queued applications
+GET    /api/v1/apply/queue/{id}/form-fields   # Get pre-filled form fields
+POST   /api/v1/apply/queue/{id}/confirm       # Mark as submitted (human confirms)
+DELETE /api/v1/apply/queue/{id}               # Remove from queue
 ```
 
-### Manual API Testing
-```bash
-# Test with curl commands
-bash curl_test.sh
-
-# Interactive Python testing
-python curl_like_test.py
+### Pipeline Stats (v2.5)
+```http
+GET /api/v1/pipeline/stats
 ```
+
+## 🔬 Pipeline Architecture
+
+```
+Scanner Layer  →  Evaluation Layer  →  Apply Queue  →  Tracker
+─────────────     ────────────────     ────────────     ───────
+Greenhouse API    Gemini 6-block AI    Pre-fill forms   Stats
+Ashby scrape      CV match score       Human approval   History
+Playwright        North-star score     Confirm/reject
+                  Comp score
+                  Cultural score
+                  STAR stories
+```
+
+**Key design decisions:**
+- **Never auto-submits**: Every application requires explicit human confirmation
+- **Greenhouse API preferred**: Direct REST API gives clean JSON + HTML; avoids Playwright for those portals
+- **HTML entity decoding**: Greenhouse's `content` field returns `&lt;div&gt;` — must call `html.unescape()` before BeautifulSoup
+- **Ashby `__NEXT_DATA__`**: Ashby boards are SPAs; scraping the embedded JSON in the page's `<script id="__NEXT_DATA__">` is more reliable than Playwright DOM traversal
+- **Windows Playwright fix**: `asyncio.WindowsProactorEventLoopPolicy()` must be set before launching Chromium on Windows (default SelectorEventLoop doesn't support subprocess creation)
 
 ## 📁 Project Structure
 
 ```
 server/
 ├── app/
-│   ├── main.py              # FastAPI application
-│   ├── models.py            # Pydantic models
+│   ├── main.py                   # FastAPI app, router registration
+│   ├── models.py                 # Pydantic request/response models
 │   ├── auth/
-│   │   └── auth.py          # Authentication logic
+│   │   └── auth.py               # JWT + bcrypt authentication
 │   ├── core/
-│   │   ├── llm.py           # Gemini LLM integration
-│   │   ├── tailor.py        # Resume tailoring logic
-│   │   └── tex_compile.py   # LaTeX compilation
+│   │   ├── llm.py                # Gemini LLM client
+│   │   ├── tailor.py             # Resume tailoring logic
+│   │   ├── tex_compile.py        # LaTeX → PDF compilation
+│   │   ├── job_scanner.py        # Portal scanner (Greenhouse + Ashby + Playwright)
+│   │   └── evaluator.py          # 6-block job evaluation
 │   ├── db/
-│   │   ├── database.py      # Database setup
-│   │   └── models.py        # SQLAlchemy models
+│   │   ├── database.py           # Async SQLAlchemy setup
+│   │   └── models.py             # ORM models (users, discovered_jobs, job_evaluations, application_queue)
 │   ├── routes/
-│   │   ├── v1_auth.py       # Authentication routes
-│   │   ├── v1_profile.py    # Profile management
-│   │   └── v1_generate.py   # Document generation
-│   └── templates/           # LaTeX templates
-├── tests/                   # Test suite
-├── artifacts/               # Generated files
-└── requirements.txt         # Dependencies
+│   │   ├── v1_auth.py            # Auth endpoints
+│   │   ├── v1_profile.py         # Profile endpoints
+│   │   ├── v1_generate.py        # Document generation
+│   │   ├── v1_scanner.py         # Job scanner + discovery endpoints
+│   │   ├── v1_apply.py           # Apply queue endpoints
+│   │   └── v1_pipeline.py        # Pipeline stats
+│   └── templates/                # LaTeX resume templates
+├── tests/
+├── artifacts/                    # Generated PDFs/TEX files
+├── migrate.py                    # DB migration runner
+├── start.sh                      # Production entrypoint
+├── Dockerfile                    # Docker image (includes TexLive + Playwright)
+└── requirements.txt
 ```
 
-## 🔧 Configuration
+## 🐳 Docker
 
-### LaTeX Setup (Optional)
-For local PDF compilation:
+The Dockerfile includes full TeX Live (~2GB) and Playwright Chromium:
 
-**Windows:**
 ```bash
-# Install MiKTeX or TeXLive
-winget install MiKTeX.MiKTeX
+# Build
+docker build -t umukozihr-server .
+
+# Run
+docker run -p 8000:8000 \
+  -e GEMINI_API_KEY=your_key \
+  -e DATABASE_URL=postgresql+asyncpg://... \
+  umukozihr-server
 ```
 
-**macOS:**
-```bash
-brew install --cask mactex
-```
+Works with AWS App Runner and ECS out of the box.
 
-**Linux:**
-```bash
-sudo apt-get install texlive-full
-```
+## 🧪 Testing
 
-### Docker Setup (Recommended)
-For reliable PDF compilation:
 ```bash
-# Pull LaTeX Docker image
-docker pull texlive/texlive:latest
+python tests/run_all_tests.py          # Full suite
+python tests/test_components.py        # Unit tests
+python tests/test_api.py               # API integration tests
+python tests/full_api_test.py          # End-to-end
 ```
 
 ## 🐛 Troubleshooting
 
-### Common Issues
-
-**1. bcrypt Installation Error (Windows)**
-```
-Fallback authentication (SHA256) will be used automatically
-```
-
-**2. LaTeX Compilation Fails**
-```
-Docker fallback will be used automatically
-Check Docker installation if PDFs aren't generated
-```
-
-**3. Gemini API Errors**
-```
-Verify GEMINI_API_KEY in .env file
-Check API quota and billing status
-```
-
-**4. Port Already in Use**
-```bash
-# Use different port
-uvicorn app.main:app --host 0.0.0.0 --port 8001
-```
-
-### Debug Mode
-```bash
-# Enable detailed logging
-export LOG_LEVEL=DEBUG
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug
-```
-
-## 📊 Performance
-
-- **Generation Time**: 20-60 seconds per job (depends on LLM response time)
-- **Concurrent Users**: Supports multiple simultaneous requests
-- **File Sizes**: PDFs typically 50-200KB, TEX files 5-15KB
+| Problem | Fix |
+|---------|-----|
+| `ModuleNotFoundError: PIL` | `pip install pillow` |
+| `ModuleNotFoundError: jwt` | `pip install PyJWT` |
+| Playwright `NotImplementedError` on Windows | Set `asyncio.WindowsProactorEventLoopPolicy()` before launch |
+| Greenhouse API 404 | Verify `api_slug` matches exact board slug (e.g. `anthropic` not `anthropic-ai`) |
+| Server loads old `.pyc` after edits | `find . -name "*.pyc" -delete` and restart |
+| Port 8000 in use (Windows) | Use port 8001; kill old process via `taskkill /F /PID <n>` in cmd.exe |
 
 ## 🔒 Security
 
-- JWT token authentication
+- JWT authentication on all pipeline endpoints
 - CORS protection
-- Input validation and sanitization
-- Secure file handling
-- Password hashing (bcrypt preferred, SHA256 fallback)
+- Input validation via Pydantic
+- Never auto-submits applications — human confirmation required
 
-## 🚀 Deployment
+## 📊 Performance Notes
 
-### Docker Deployment
-```dockerfile
-# Dockerfile example
-FROM python:3.9-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Production Considerations
-- Use PostgreSQL for production database
-- Set up Redis for async job processing
-- Configure proper environment variables
-- Set up reverse proxy (nginx)
-- Enable HTTPS
+- **Portal scan**: ~433 jobs from 20 companies in under 60 seconds (Greenhouse API is fast; Playwright is slow)
+- **JD extraction**: ~5-15 seconds per job (Greenhouse API instant; Playwright ~10s)
+- **Evaluation**: ~8-20 seconds per job (Gemini 2.5 Flash)
+- **Concurrent users**: Multiple simultaneous requests supported
 
 ## 📝 API Documentation
 
-Interactive API documentation available at:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Run the test suite
-5. Submit a pull request
-
-## 📄 License
-
-Private - UmukoziHR Internal Use
-
-## 🆘 Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Run the test suite to verify setup
-- Review server logs in `umukozihr.log`
-
 ---
 
-**Built with ❤️ by the UmukoziHR Team**
+**Built by the UmukoziHR Team** · Private — Internal Use
